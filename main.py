@@ -24,7 +24,6 @@ a = TestFunction(A)
 dt = 0.001
 T = Constant(10)
 nu = Constant(1e-6)
-D = Constant(0.0) 
 
 # Define boundary conditions
 noslip = DirichletBC(V, (0, 0),
@@ -56,7 +55,6 @@ alpha = Constant(5.0)
 n = FacetNormal(mesh)
 h = CellSize(mesh)
 h_avg = (h('+') + h('-'))/2
-un = (dot(u1, n) + abs(dot(u1, n)))/2.0
 
 # Tentative velocity step
 F1 = (1/k)*inner(u - u0, v)*dx + inner(grad(u0)*u0, v)*dx + \
@@ -76,15 +74,13 @@ L3 = inner(u1, v)*dx - k*inner(grad(p1), v)*dx
 G = Expression('0')
 
 # Bilinear form
-a4_int = ((1/k)*c*a + dot(grad(a), D*grad(c) - u1*c))*dx
-a4_dif = D('+')*(alpha('+')/h('+'))*dot(jump(a, n), jump(c, n))*dS \
-      - D('+')*dot(avg(grad(a)), jump(c, n))*dS \
-      - D('+')*dot(jump(a, n), avg(grad(c)))*dS
-a4_vel =   #dot(jump(a), un('+')*c('+') - un('-')*c('-'))*dS #+ dot(a, un*c)*ds
-a4 = a4_int + a4_dif + a4_vel 
+a4_int = (1/k)*c*a*dx - dot(grad(a), u1*c)*dx
+phi = dot(u1, n)/abs(dot(u1, n))
+a4_vel = dot(jump(a,n), phi('+')*(u1*c)('+') - phi('-')*(u1*c)('-'))*dS 
+a4 = a4_int + a4_vel 
 
 # Linear form
-L4 = ((1/k)*c0 + fc)*a*dx + a*G*ds
+L4 = ((1/k)*c0 + fc)*a*dx + a*phi('+')*G*ds
 
 # Assemble matrices
 A1 = assemble(a1)
