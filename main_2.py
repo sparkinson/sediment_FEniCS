@@ -17,7 +17,7 @@ dt = 0.005
 T = Constant(10)           
 nu = Constant(1e-6)        # viscosity
 k = Constant(dt)           
-kappa = Constant(5e-4)      # diffusivity
+kappa = Constant(1e-6)      # diffusivity
 alpha = Constant(5.0)      # penalty term
 f_c = Constant(0.0)        # scalar field source term
 f_u = Constant((0.0,0.0))  # velocity source term
@@ -26,6 +26,7 @@ g = Constant((0, -9.81))
 # Initial conditions
 c_0 = Expression('(1.0-floor(x[0]+0.8))*0.007')
 u_0 = Constant((0.0,0.0))
+p_0 = Constant(0.0)
 # u_0a = Constant((1.0,0.0))
 
 # Save files
@@ -37,7 +38,7 @@ pe_file = File("results/peclet.pvd")
 # Defining the function spaces
 A_dg = FunctionSpace(mesh, "DG", 1)
 A_cg = FunctionSpace(mesh, "CG", 1)
-V = VectorFunctionSpace(mesh, "CG", 2)
+V = VectorFunctionSpace(mesh, "CG", 1)
 V1 = SubSpace(V, 1)
 Q = FunctionSpace(mesh, "CG", 1)
 
@@ -47,18 +48,19 @@ c = TrialFunction(A_cg)
 v = TestFunction(V)
 u = TrialFunction(V)
 q = TestFunction(Q)
-p = TrialFunction(Q)
+pc = TrialFunction(Q)
 pe = TrialFunction(V)
 
 # Solution functions
 c_s = Function(A_cg)
 u_s = Function(V)
-p_s = Function(Q)
+pc_s = Function(Q)
 pe_s = Function(V)
 
 # Initialise stored values
 c_1 = project(c_0,A_cg)
 u_1 = project(u_0,V)
+p_1 = project(p_0,Q)
 # u_1a = project(u_0a,V)
 
 # Mesh-related functions
@@ -69,20 +71,18 @@ h_avg = (h('+') + h('-'))/2
 # ------------------------------------------------------------------------------------
 # Tentative velocity step
 # ------------------------------------------------------------------------------------
-F1 = (1/k)*inner(u - u_1, v)*dx + inner(grad(u_1)*u_1, v)*dx + \
-     nu*inner(grad(u), grad(v))*dx - inner(f_u, v)*dx - inner(g*c_s, v)*dx
-a1 = lhs(F1)
-L1 = rhs(F1)
+a1 = (1/k)*inner(u, v)*dx + nu*inner(grad(u), grad(v))*dx
+L1 = (1/k)*inner(u_1, v)*dx - inner(grad(u_1)*u_1, v)*dx - inner(grad(p_1), v)*dx + inner(f_u, v)*dx + inner(g*c_s, v)*dx
 # ------------------------------------------------------------------------------------
-# Pressure update
+# Pressure correction
 # ------------------------------------------------------------------------------------
-a2 = inner(grad(p), grad(q))*dx
-L2 = -(1/k)*div(u_s)*q*dx
+a2 = inner(grad(pc), grad(q))*dx
+L2 = (1/k)*inner(u_s, grad(q))*dx
 # ------------------------------------------------------------------------------------
 # Velocity update
 # ------------------------------------------------------------------------------------
 a3 = inner(u, v)*dx
-L3 = inner(u_s, v)*dx - k*inner(grad(p_s), v)*dx
+L3 = inner(u_s, v)*dx - k*inner(grad(pc_s), v)*dx
 # ------------------------------------------------------------------------------------
 # Scalar advection/diffusion
 # ------------------------------------------------------------------------------------
@@ -141,7 +141,7 @@ while t < T + DOLFIN_EPS:
 
     # Pressure correction
     b2 = assemble(L2)
-    solve(A2, p_s.vector(), b2, "gmres", "amg")
+    solve(A2, pc_s.vector(), b2, "gmres", "amg")
     end()
 
     # Velocity correction
@@ -149,19 +149,20 @@ while t < T + DOLFIN_EPS:
     [bc.apply(A3, b3) for bc in bcu]
     solve(A3, u_s.vector(), b3, "gmres", "default")
     end()
-    
-    # Project solution to a continuous function space and save
-    if t >= t_save + 0.1:
-        # c_s_cg = project(c_s, V=A_cg)
-        c_file << c_s#_cg
-        u_file << u_s
-        p_file << p_s
-        pe_file << pe_s
-        t_save = t
 
     # Store value of c_1
     c_1.assign(c_s)
     u_1.assign(u_s)
+    p_1 = project(pc_s + p_1, Q)
+    
+    # Project solution to a continuous function space and save
+    if t >= t_save + 0.1:
+        # c_s_cg = project(c_s, V=A_cg)
+        c_file << c_1
+        u_file << u_1
+        p_file << p_1
+        pe_file << pe_s
+        t_save = t
 
     t += dt
     print "t =", t
