@@ -1,6 +1,39 @@
 from numpy import *
 from dolfin import *
 
+def epsilon(u):
+    return 0.5*(nabla_grad(u) + nabla_grad(u).T)
+
+def sigma(u, p, nu):
+    return 2*nu*epsilon(u) - p*Identity(u.cell().d)
+
+def time_discretisation(u, u_1, u_2 = None, scheme = 'FE', alpha = 0.5):
+    if scheme == 'AB': # Adams Bashforth - explicit scheme
+        u_tilde = 1.5*u_1 - 0.5*u_2
+        u_bar = 1.5*u_1 - 0.5*u_2
+    elif scheme == 'FE': # Forward Euler - implicit scheme
+        u_tilde = u_1
+        u_bar = alpha*(u + u_1)
+    elif scheme == 'ABP': # Adams Bashforth Projection - implicit scheme
+        u_tilde = 1.5*u_1 - 0.5*u_2
+        u_bar = alpha*(u + u_1)
+    else:
+        raise Exception('Unknown time-discretisation for velocity') 
+    return u_tilde, u_bar
+
+def conv(u_tilde, u_bar, v, mode="Standard"):
+    if (mode == "Standard"):
+        return inner(u_tilde*grad(u_bar), v)
+    elif (mode == "Divergence"):
+        return inner(div(outer(u_tilde, u_bar)), v)
+    elif (mode == "Skew"):
+        return 0.5*(inner(u_tilde*grad(u_bar), v) + \
+                        inner(div(outer(u_tilde, u_bar)), v))
+    else:
+        raise Exception('Unknown convection mode') 
+    
+
+
 class NoSlipBoundary(SubDomain):
     def inside(self, x, on_boundary):
         return (x[0] < DOLFIN_EPS or x[1] < DOLFIN_EPS or abs(x[0] - 1.0) < DOLFIN_EPS) and on_boundary
@@ -74,21 +107,5 @@ F = ((1/k)*inner(u - u_1, v)*dx + nu*inner(grad(u), grad(v))*dx + inner(grad(u_1
      + div(v)*p*dx + q*div(u)*dx - inner(f_u, v)*dx + inner(g*c_s, v)*dx)
 F  = action(F, w_s)
 J = derivative(F, w_s, dw)
-
-problem = NonlinearVariationalProblem(F, w_s, J=J)
-solver = NonlinearVariationalSolver(problem)
-prm = solver.parameters
-prm['newton_solver']['absolute_tolerance'] = 1E-8
-prm['newton_solver']['relative_tolerance'] = 1E-7
-prm['newton_solver']['maximum_iterations'] = 25
-prm['newton_solver']['relaxation_parameter'] = 1.0
-if iterative_solver:
-    prm['linear_solver'] = 'gmres'
-    prm['preconditioner'] = 'ilu'
-    prm['krylov_solver']['absolute_tolerance'] = 1E-9
-    prm['krylov_solver']['relative_tolerance'] = 1E-7
-    prm['krylov_solver']['maximum_iterations'] = 1000
-    prm['krylov_solver']['gmres']['restart'] = 40
-    prm['krylov_solver']['preconditioner']['ilu']['fill_level'] = 0
 
 solver.solve()
