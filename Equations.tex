@@ -1,0 +1,255 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{dsfont}
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{pdflscape}
+\usepackage{float}
+\usepackage{natbib}
+\usepackage{amsmath}
+\usepackage[top=2cm,bottom=2cm,left=2.2cm,right=2.2cm]{geometry}
+\usepackage{setspace}
+\usepackage{indentfirst}
+\usepackage[font=small,format=plain,labelfont=bf,up,%% textfont=it
+  ,up]{caption}
+\usepackage{tikz}
+\usetikzlibrary{calc,3d}
+\setlength{\parindent}{10pt}
+\setlength{\parskip}{7pt}
+\usepackage{upgreek}
+\usepackage{breqn}
+\setlength{\belowdisplayskip}{6pt plus 2pt minus 1pt}
+\setlength{\belowdisplayshortskip}{6pt plus 1pt minus 1pt}
+\setlength{\abovedisplayskip}{6pt plus 2pt minus 1pt}
+\setlength{\abovedisplayshortskip}{6pt plus 1pt minus 1pt}
+
+%% \doublespacing    
+
+\bibliographystyle{plainnat}
+
+\title{}
+\author{Samuel Parkinson}
+\date{\today}
+
+\begin{document}
+\begin{dgroup*}
+  \begin{dmath}
+    \dot{u} + u \cdot \nabla u - \nabla \cdot \sigma = f - \nabla p 
+  \end{dmath}
+  \begin{dmath}
+    \nabla u = 0 
+  \end{dmath}
+  \begin{dmath}
+    \sigma = \nu \left( \nabla u + \left(\nabla u \right)^\top \right) 
+  \end{dmath}
+\end{dgroup*}
+
+Several authors seem to neglect $\sigma$ in this form and just have $\sigma = \nabla u$ ??
+
+%% \begin{dgroup*}
+%%   \begin{dmath}
+%%     \int u \cdot \nabla u = u \cdot u - \int \nabla \cdot \left(u \right) \cdot u
+%%   \end{dmath}
+%%   \begin{dmath}
+%%     u \cdot \nabla u = \nabla \left( u \cdot u \right) - \left( \nabla \cdot u \right) \cdot u
+%%   \end{dmath}
+%% \end{dgroup*}
+
+\section{Weak form:}
+\begin{dmath}
+  \int_\Omega v \dot{u} \; d\Omega + \int_\Omega v u \cdot \nabla u \; d\Omega - \int_\Omega v \nabla \cdot \sigma \; d\Omega = \int_\Omega v f \; d\Omega - \int_\Omega v \nabla p \; d\Omega
+\end{dmath}
+
+\begin{dgroup*}
+  \begin{dmath}
+     \int v \nabla \cdot \sigma = v \sigma - \int \nabla v \cdot \sigma
+  \end{dmath}
+  \begin{dmath}
+    v \nabla \cdot \sigma = \nabla \left(v \sigma \right) - \nabla v \cdot \sigma
+  \end{dmath}
+\end{dgroup*}
+
+\begin{dmath}
+  \int_\Omega \nabla \left(v \sigma \right) \; d\Omega = \int_\Upgamma \left(v \sigma \right) \cdot n \; d\Upgamma = \int_\Upgamma v \left( \sigma \cdot n \right) \; d\Upgamma
+\end{dmath}
+
+\begin{dgroup*}
+  \begin{dmath}
+    \int_\Omega v \dot{u} \; d\Omega + \int_\Omega v u \cdot \nabla u \; d\Omega + \int_\Omega \nabla v \cdot \sigma \; d\Omega = \int_\Omega v f \; d\Omega - \int_\Omega v \nabla p \; d\Omega + \int_\Upgamma v g \; d\Upgamma
+  \end{dmath}
+  \begin{dmath}
+    g = \sigma \cdot n
+  \end{dmath}
+\end{dgroup*}
+
+%% \begin{dgroup*}
+%%   \begin{dmath}
+%%     \int v \nabla p = vp - \int \nabla \cdot v p
+%%   \end{dmath}
+%%   \begin{dmath}
+%%     v \nabla p = \nabla \cdot \left( vp \right) - \left(\nabla \cdot v \right) p
+%%   \end{dmath}
+%% \end{dgroup*}
+
+\begin{dmath}
+  \int_\Omega q \nabla \cdot u \; d\Omega = 0
+\end{dmath}
+
+\section{Time discretisation:}
+
+\begin{dmath}
+  \dot{u} = \frac{u_n - u_{n-1}}{\Delta t}
+\end{dmath}
+
+\begin{dmath}
+  \int_\Omega v \frac{u_n - u_{n-1}}{\Delta t} \; d\Omega + \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega = \int_\Omega v f \; d\Omega + \int_\Omega v \nabla p \; d\Omega + \int_\Upgamma v g \; d\Upgamma
+\end{dmath}
+\begin{dmath}
+  \sigma_{n-\alpha} = \nu \left( \nabla u_{n-\alpha} + \left(\nabla u_{n-\alpha} \right)^\top \right) 
+\end{dmath}
+\begin{dmath}
+  \int_\Omega q \nabla \cdot u_{n-\alpha} \; d\Omega = 0
+\end{dmath}
+
+
+\begin{dmath}
+  u_{n-\alpha} = \alpha u_{n-1} + \left( 1 - \alpha \right) u_{n}
+\end{dmath}
+\begin{dmath}
+  u_{n-\alpha_{nl}} = \alpha_{nl} u_{n-1} + \left( 1 - \alpha_{nl} \right) u_{n*}
+\end{dmath}
+\begin{dgroup*}
+\intertext{Explicit Adams Bashforth}
+\begin{dmath}
+  \bar{u} = \frac{3}{2} u_{n-1} - \frac{1}{2} u_{n-2}
+\end{dmath}, 
+\begin{dmath}
+  \tilde{u} = \frac{3}{2} u_{n-1} - \frac{1}{2} u_{n-2}
+\end{dmath}. 
+\intertext{Forward Euler}
+\begin{dmath}
+  \bar{u} = u_{n-\alpha}
+\end{dmath}, 
+\begin{dmath}
+  \tilde{u} = u_{n-1}
+\end{dmath}. 
+\intertext{Implicit Adams Bashforth}
+\begin{dmath}
+  \bar{u} = u_{n-\alpha}
+\end{dmath}, 
+\begin{dmath}
+  \tilde{u} = \frac{3}{2} u_{n-1} - \frac{1}{2} u_{n-2}
+\end{dmath}. 
+\intertext{Impicit - as Fluidity}
+\begin{dmath}
+  \bar{u} = u_{n-\alpha}
+\end{dmath}, 
+\begin{dmath}
+  \tilde{u} = u_{n-\alpha_{nl}} 
+\end{dmath}. 
+\end{dgroup*}
+%% \begin{dmath}
+%%   \int_\Omega v u \; d\Omega + \int_\Omega v u \cdot \nabla u \; d\Omega + \int_\Omega \nabla v \cdot \sigma \; d\Omega = \int_\Omega v f \; d\Omega + \int_\Omega v \nabla p \; d\Omega + \int_\Upgamma v g \; d\Upgamma
+%% \end{dmath}
+
+Top three of these time discretisation schemes lead to a completely linear problem - no need for iteration if using fully coupled equation. ???
+
+\section{Pressure/Conservation:}
+
+\subsection{Fully coupled:}
+
+\begin{dmath}
+  \int_\Omega v \frac{u_n - u_{n-1}}{\Delta t} \; d\Omega + \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \int_\Omega v f \; d\Omega + \int_\Omega v \nabla p \; d\Omega - \int_\Upgamma v g \; d\Upgamma = 0
+\end{dmath}
+\begin{dmath}
+  \int_\Omega v  \left(u_n - u_{n-1} \right) \; d\Omega + \Delta t \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \Delta t \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \Delta t \int_\Omega v f \; d\Omega + \Delta t \int_\Omega v \nabla p \; d\Omega - \Delta t \int_\Upgamma v g \; d\Upgamma = 0
+\end{dmath}
+
+\begin{dgroup*}
+  \begin{dmath}
+    \int v \nabla p = vp - \int \nabla \cdot v p
+  \end{dmath}
+  \begin{dmath}
+    v \nabla p = \nabla \cdot \left( vp \right) - \left(\nabla \cdot v \right) p
+  \end{dmath}
+\end{dgroup*}
+
+\begin{dmath}
+  \int_\Omega \nabla \cdot \left( vp \right) \; d\Omega = \int_\Upgamma \left(vp \right) \cdot n \; d\Upgamma
+\end{dmath}
+\begin{dmath}
+  \int_\Omega v \left(u_n - u_{n-1} \right) \; d\Omega + \Delta t \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \Delta t \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \Delta t \int_\Omega v f \; d\Omega-  \Delta t \int_\Omega \left(\nabla \cdot v \right) p \; d\Omega - \Delta t \int_\Upgamma v h \; d\Upgamma = 0
+\end{dmath}
+
+\begin{dmath}
+  h = g + p \cdot n
+\end{dmath}
+
+\begin{dmath}
+  \int_\Omega q \nabla \cdot u_{n-\alpha} \; d\Omega = 0
+\end{dmath}
+
+Therefore:
+\begin{dmath}
+  \int_\Omega v \left(u_n - u_{n-1} \right) \; d\Omega + \Delta t \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \Delta t \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \Delta t \int_\Omega v f \; d\Omega-  \Delta t \int_\Omega \left(\nabla \cdot v \right) p \; d\Omega + \int_\Omega q \nabla \cdot u_{n-\alpha} \; d\Omega - \Delta t \int_\Upgamma v h \; d\Upgamma = 0
+\end{dmath}
+
+Is this right?? What do I do about the dirichlet pressure boundary condition?
+
+\subsection{Incremental pressure correction (IPCS):}
+
+Tentative velocity step:
+\begin{dmath}
+  \int_\Omega v \frac{u_* - u_{n-1}}{\Delta t} \; d\Omega + \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \int_\Omega v f \; d\Omega + \int_\Omega v \nabla p_{n-\frac{1}{2}} \; d\Omega - \int_\Upgamma v g \; d\Upgamma = 0
+\end{dmath}
+
+Corrected velocity:
+\begin{dmath}
+  \int_\Omega v \frac{u_n - u_{n-1}}{\Delta t} \; d\Omega + \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \int_\Omega v f \; d\Omega + \int_\Omega v \nabla p_{n+\frac{1}{2}} \; d\Omega - \int_\Upgamma v g \; d\Upgamma = 0
+\end{dmath}
+
+(26) - (25):
+\begin{dmath}
+  \int_\Omega v \frac{u_n - u_*}{\Delta t} \; d\Omega + \int_\Omega v \nabla \left(p_{n+\frac{1}{2}} - p_{n-\frac{1}{2}} \right) \; d\Omega = 0
+\end{dmath}
+
+left multiply by \begin{math}\nabla q \frac{1}{v}\end{math}:
+
+\begin{dmath}
+  \int_\Omega \nabla q \cdot \frac{u_n - u_*}{\Delta t} \; d\Omega + \int_\Omega \nabla q \cdot \nabla \left(p_{n+\frac{1}{2}} - p_{n-\frac{1}{2}} \right) \; d\Omega = 0
+\end{dmath}
+\begin{dmath}
+  \int_\Omega \nabla q \cdot \frac{u_n}{\Delta t} \; d\Omega - \int_\Omega \nabla q \cdot \frac{u_*}{\Delta t} \; d\Omega + \int_\Omega \nabla q \cdot \nabla \left(p_{n+\frac{1}{2}} - p_{n-\frac{1}{2}} \right) \; d\Omega = 0
+\end{dmath}
+
+Where do I go from here???
+
+%% \begin{dmath}
+%%   \int_\Omega q \nabla \cdot u \; d\Omega = 0
+%% \end{dmath}
+
+%% \begin{dgroup*}
+%%   \begin{dmath}
+%%     \int q \nabla \cdot u = q \cdot u - \int \nabla q \cdot u 
+%%   \end{dmath}
+%%   \begin{dmath}
+%%     \nabla \left(q \cdot u \right) - \nabla q \cdot u 
+%%   \end{dmath}
+%% \end{dgroup*}
+
+%% \begin{dmath}
+%%   \int_\Omega  \nabla \left(q \cdot u \right) \; d\Omega = \int_\Upgamma \left( q \cdot u \right) \cdot n \; d\Upgamma = \int_\Upgamma q u \cdot n \; d\Upgamma
+%% \end{dmath}
+
+%% \begin{dmath}
+%%   \int_\Omega \nabla q \cdot u \; d\Omega - \int_\Upgamma q u \cdot n \; d\Upgamma = 0
+%% \end{dmath}
+
+%% \begin{dmath}
+%%   \left(\int_\Omega \nabla q \cdot u \; d\Omega - \int_\Upgamma q u \cdot n \; d\Upgamma \right)^\top = \int_\Omega \nabla p \cdot v \; d\Omega - \int_\Upgamma p v \cdot n \; d\Upgamma 
+%% \end{dmath}
+
+
+
+\bibliography{/data/sp911/documents/Bibliography/Bibliography}
+
+\end{document}

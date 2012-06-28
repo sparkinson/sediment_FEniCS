@@ -1,39 +1,50 @@
 from numpy import *
 from dolfin import *
 
-def epsilon(u):
-    return 0.5*(nabla_grad(u) + nabla_grad(u).T)
-
-def sigma(u, p, nu):
-    return 2*nu*epsilon(u) - p*Identity(u.cell().d)
-
-def time_discretisation(u, u_1, u_2 = None, scheme = 'FE', alpha = 0.5):
-    if scheme == 'AB': # Adams Bashforth - explicit scheme
-        u_tilde = 1.5*u_1 - 0.5*u_2
-        u_bar = 1.5*u_1 - 0.5*u_2
-    elif scheme == 'FE': # Forward Euler - implicit scheme
-        u_tilde = u_1
-        u_bar = alpha*(u + u_1)
-    elif scheme == 'ABP': # Adams Bashforth Projection - implicit scheme
-        u_tilde = 1.5*u_1 - 0.5*u_2
-        u_bar = alpha*(u + u_1)
-    else:
-        raise Exception('Unknown time-discretisation for velocity') 
-    return u_tilde, u_bar
-
-def conv(u_tilde, u_bar, v, mode="Standard"):
-    if (mode == "Standard"):
-        return inner(u_tilde*grad(u_bar), v)
-    elif (mode == "Divergence"):
-        return inner(div(outer(u_tilde, u_bar)), v)
-    elif (mode == "Skew"):
-        return 0.5*(inner(u_tilde*grad(u_bar), v) + \
-                        inner(div(outer(u_tilde, u_bar)), v))
-    else:
-        raise Exception('Unknown convection mode') 
+class NavierStokes():
+    def __init__(self):
+        a
     
+    def formulate():
+        F = ((1/k)*inner(u - u_1, v)*dx + nu*inner(grad(u), grad(v))*dx + inner(grad(u_1)*u_1, v)*dx 
+             + div(v)*p*dx + q*div(u)*dx - inner(f_u, v)*dx + inner(g*c_s, v)*dx)
+        self.a = lhs(F); self.L = rhs(F)
+        
+    def epsilon(self, u):
+        return 0.5*(nabla_grad(u) + nabla_grad(u).T)
 
+    def sigma(self, u, p, nu):
+        return 2*nu*epsilon(u) - p*Identity(u.cell().d)
 
+    def time_discretisation(self, u, u_1, u_2 = None, scheme = 'FE', alpha = 0.5):
+        
+        u_alpha = alpha*u_1 + (1.0-alpha)*u
+        
+        if scheme == 'AB': # Adams Bashforth - explicit scheme
+            u_tilde = 1.5*u_1 - 0.5*u_2
+            u_bar = 1.5*u_1 - 0.5*u_2
+        elif scheme == 'FE': # Forward Euler - implicit scheme
+            u_tilde = u_1
+            u_bar = u_alpha
+        elif scheme == 'ABP': # Adams Bashforth Projection - implicit scheme
+            u_tilde = 1.5*u_1 - 0.5*u_2
+            u_bar = u_alpha
+        else:
+            raise Exception('Unknown time-discretisation for velocity') 
+        
+        return u_alpha, u_tilde, u_bar 
+
+    def conv(self, u_tilde, u_bar, v, mode="Standard"):
+        if (mode == "Standard"):
+            return inner(u_tilde*grad(u_bar), v)
+        elif (mode == "Divergence"):
+            return inner(div(outer(u_tilde, u_bar)), v)
+        elif (mode == "Skew"):
+            return 0.5*(inner(u_tilde*grad(u_bar), v) + \
+                            inner(div(outer(u_tilde, u_bar)), v))
+        else:
+            raise Exception('Unknown convection mode') 
+    
 class NoSlipBoundary(SubDomain):
     def inside(self, x, on_boundary):
         return (x[0] < DOLFIN_EPS or x[1] < DOLFIN_EPS or abs(x[0] - 1.0) < DOLFIN_EPS) and on_boundary
@@ -103,9 +114,6 @@ c_s.interpolate(c_0)
 c_1.interpolate(c_0)
 
 # Non-linear variational Navier-Stokes
-F = ((1/k)*inner(u - u_1, v)*dx + nu*inner(grad(u), grad(v))*dx + inner(grad(u_1)*u_1, v)*dx 
-     + div(v)*p*dx + q*div(u)*dx - inner(f_u, v)*dx + inner(g*c_s, v)*dx)
-F  = action(F, w_s)
 J = derivative(F, w_s, dw)
 
 solver.solve()
