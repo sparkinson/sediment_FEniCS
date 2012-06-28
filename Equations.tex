@@ -33,219 +33,216 @@
 \begin{document}
 \begin{dgroup*}
   \begin{dmath}
-    \dot{u} + u \cdot \nabla u - \nabla \cdot \sigma = f - \nabla p 
+    \dot{{\bf u}} + {\bf u} \cdot \nabla {\bf u} - \nabla \cdot {\bf \bar{\bar{\tau}}} = {\bf f} - \nabla p 
   \end{dmath}
   \begin{dmath}
-    \nabla u = 0 
+    \nabla \cdot {\bf u} = 0 
   \end{dmath}
   \begin{dmath}
-    \sigma = \nu \left( \nabla u + \left(\nabla u \right)^\top \right) 
+    {\bf \bar{\bar{\tau}}} = \nu \left( \nabla {\bf u} + \left(\nabla {\bf u} \right)^\top \right) 
   \end{dmath}
 \end{dgroup*}
 
-Several authors seem to neglect $\sigma$ in this form and just have $\sigma = \nabla u$ ??
-
 %% \begin{dgroup*}
 %%   \begin{dmath}
-%%     \int u \cdot \nabla u = u \cdot u - \int \nabla \cdot \left(u \right) \cdot u
+%%     \int {\bf u} \cdot \nabla {\bf u} = {\bf u} \cdot {\bf u} - \int \nabla \cdot \left({\bf u} \right) \cdot {\bf u}
 %%   \end{dmath}
 %%   \begin{dmath}
-%%     u \cdot \nabla u = \nabla \left( u \cdot u \right) - \left( \nabla \cdot u \right) \cdot u
+%%     {\bf u} \cdot \nabla {\bf u} = \nabla \left( {\bf u} \cdot {\bf u} \right) - \left( \nabla \cdot {\bf u} \right) \cdot {\bf u}
 %%   \end{dmath}
 %% \end{dgroup*}
 
 \section{Weak form:}
+
 \begin{dmath}
-  \int_\Omega v \dot{u} \; d\Omega + \int_\Omega v u \cdot \nabla u \; d\Omega - \int_\Omega v \nabla \cdot \sigma \; d\Omega = \int_\Omega v f \; d\Omega - \int_\Omega v \nabla p \; d\Omega
+  \int_\Omega {\bf v} \cdot \dot{{\bf u}} \; d\Omega + \int_\Omega {\bf v} \cdot {\bf u} \cdot \nabla {\bf u} \; d\Omega - \int_\Omega {\bf v} \cdot \nabla \cdot {\bf \bar{\bar{\tau}}} \; d\Omega = \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega - \int_\Omega {\bf v} \cdot \nabla p \; d\Omega \condition{$\forall {\bf v}$}
 \end{dmath}
 
+\noindent
+in 1D:
+\begin{dmath}
+  \int^b_a v \nabla \tau \; dx = \left . v \tau \right |^b_a - \int^b_a \nabla v \tau \; dx
+\end{dmath}
+in multiple dimensions:
 \begin{dgroup*}
   \begin{dmath}
-     \int v \nabla \cdot \sigma = v \sigma - \int \nabla v \cdot \sigma
-  \end{dmath}
-  \begin{dmath}
-    v \nabla \cdot \sigma = \nabla \left(v \sigma \right) - \nabla v \cdot \sigma
+     \int_\Omega {\bf v} \cdot \nabla \cdot {\bf \bar{\bar{\tau}}} \; d\Omega = \int_\Upgamma {\bf v} \cdot {\bf \bar{\bar{\tau}}} \cdot n \; d\Upgamma - \int \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}
   \end{dmath}
 \end{dgroup*}
 
-\begin{dmath}
-  \int_\Omega \nabla \left(v \sigma \right) \; d\Omega = \int_\Upgamma \left(v \sigma \right) \cdot n \; d\Upgamma = \int_\Upgamma v \left( \sigma \cdot n \right) \; d\Upgamma
-\end{dmath}
-
 \begin{dgroup*}
   \begin{dmath}
-    \int_\Omega v \dot{u} \; d\Omega + \int_\Omega v u \cdot \nabla u \; d\Omega + \int_\Omega \nabla v \cdot \sigma \; d\Omega = \int_\Omega v f \; d\Omega - \int_\Omega v \nabla p \; d\Omega + \int_\Upgamma v g \; d\Upgamma
+    \int_\Omega {\bf v} \cdot \dot{{\bf u}} \; d\Omega + \int_\Omega {\bf v} \cdot {\bf u} \cdot \nabla {\bf u} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}} \; d\Omega = \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega - \int_\Omega {\bf v} \cdot \nabla p \; d\Omega + \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma \condition{$\forall {\bf v}$}
   \end{dmath}
   \begin{dmath}
-    g = \sigma \cdot n
+    g = {\bf \bar{\bar{\tau}}} \cdot n
   \end{dmath}
 \end{dgroup*}
 
 %% \begin{dgroup*}
 %%   \begin{dmath}
-%%     \int v \nabla p = vp - \int \nabla \cdot v p
+%%     \int {\bf v} \nabla p = {\bf v}p - \int \nabla \cdot {\bf v} p
 %%   \end{dmath}
 %%   \begin{dmath}
-%%     v \nabla p = \nabla \cdot \left( vp \right) - \left(\nabla \cdot v \right) p
+%%     {\bf v} \nabla p = \nabla \cdot \left( {\bf v}p \right) - \left(\nabla \cdot {\bf v} \right) p
 %%   \end{dmath}
 %% \end{dgroup*}
 
 \begin{dmath}
-  \int_\Omega q \nabla \cdot u \; d\Omega = 0
+  \int_\Omega q \nabla \cdot {\bf u} \; d\Omega = 0 \condition{$\forall q$}
 \end{dmath}
 
-\section{Time discretisation:}
+\section{Time discretisation of momentum equation:}
 
 \begin{dmath}
-  \dot{u} = \frac{u_n - u_{n-1}}{\Delta t}
+  \dot{{\bf u}} = \frac{{\bf u}_n - {\bf u}_{n-1}}{\Delta t}
 \end{dmath}
 
 \begin{dmath}
-  \int_\Omega v \frac{u_n - u_{n-1}}{\Delta t} \; d\Omega + \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega = \int_\Omega v f \; d\Omega + \int_\Omega v \nabla p \; d\Omega + \int_\Upgamma v g \; d\Upgamma
+  \int_\Omega {\bf v} \cdot \frac{{\bf u}_n - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega = \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla p \; d\Omega + \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma \condition{$\forall {\bf v}$}
 \end{dmath}
 \begin{dmath}
-  \sigma_{n-\alpha} = \nu \left( \nabla u_{n-\alpha} + \left(\nabla u_{n-\alpha} \right)^\top \right) 
-\end{dmath}
-\begin{dmath}
-  \int_\Omega q \nabla \cdot u_{n-\alpha} \; d\Omega = 0
+  {\bf \bar{\bar{\tau}}}_{n-\alpha} = \nu \left( \nabla {\bf u}_{n-\alpha} + \left(\nabla {\bf u}_{n-\alpha} \right)^\top \right) 
 \end{dmath}
 
-
 \begin{dmath}
-  u_{n-\alpha} = \alpha u_{n-1} + \left( 1 - \alpha \right) u_{n}
+  {\bf u}_{n-\alpha} = \alpha {\bf u}_{n-1} + \left( 1 - \alpha \right) {\bf u}_{n}
 \end{dmath}
 \begin{dmath}
-  u_{n-\alpha_{nl}} = \alpha_{nl} u_{n-1} + \left( 1 - \alpha_{nl} \right) u_{n*}
+  {\bf u}_{n-\alpha_{nl}} = \alpha_{nl} {\bf u}_{n-1} + \left( 1 - \alpha_{nl} \right) {\bf u}_{n*}
 \end{dmath}
 \begin{dgroup*}
 \intertext{Explicit Adams Bashforth}
 \begin{dmath}
-  \bar{u} = \frac{3}{2} u_{n-1} - \frac{1}{2} u_{n-2}
+  \bar{{\bf u}} = \frac{3}{2} {\bf u}_{n-1} - \frac{1}{2} {\bf u}_{n-2}
 \end{dmath}, 
 \begin{dmath}
-  \tilde{u} = \frac{3}{2} u_{n-1} - \frac{1}{2} u_{n-2}
+  \tilde{{\bf u}} = \frac{3}{2} {\bf u}_{n-1} - \frac{1}{2} {\bf u}_{n-2}
 \end{dmath}. 
 \intertext{Forward Euler}
 \begin{dmath}
-  \bar{u} = u_{n-\alpha}
+  \bar{{\bf u}} = {\bf u}_{n-\alpha}
 \end{dmath}, 
 \begin{dmath}
-  \tilde{u} = u_{n-1}
+  \tilde{{\bf u}} = {\bf u}_{n-1}
 \end{dmath}. 
 \intertext{Implicit Adams Bashforth}
 \begin{dmath}
-  \bar{u} = u_{n-\alpha}
+  \bar{{\bf u}} = {\bf u}_{n-\alpha}
 \end{dmath}, 
 \begin{dmath}
-  \tilde{u} = \frac{3}{2} u_{n-1} - \frac{1}{2} u_{n-2}
+  \tilde{{\bf u}} = \frac{3}{2} {\bf u}_{n-1} - \frac{1}{2} {\bf u}_{n-2}
 \end{dmath}. 
 \intertext{Impicit - as Fluidity}
 \begin{dmath}
-  \bar{u} = u_{n-\alpha}
+  \bar{{\bf u}} = {\bf u}_{n-\alpha}
 \end{dmath}, 
 \begin{dmath}
-  \tilde{u} = u_{n-\alpha_{nl}} 
+  \tilde{{\bf u}} = {\bf u}_{n-\alpha_{nl}} 
 \end{dmath}. 
 \end{dgroup*}
 %% \begin{dmath}
-%%   \int_\Omega v u \; d\Omega + \int_\Omega v u \cdot \nabla u \; d\Omega + \int_\Omega \nabla v \cdot \sigma \; d\Omega = \int_\Omega v f \; d\Omega + \int_\Omega v \nabla p \; d\Omega + \int_\Upgamma v g \; d\Upgamma
+%%   \int_\Omega {\bf v} {\bf u} \; d\Omega + \int_\Omega {\bf v} {\bf u} \cdot \nabla {\bf u} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}} \; d\Omega = \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \nabla p \; d\Omega + \int_\Upgamma {\bf v} g \; d\Upgamma
 %% \end{dmath}
-
-Top three of these time discretisation schemes lead to a completely linear problem - no need for iteration if using fully coupled equation. ???
 
 \section{Pressure/Conservation:}
 
 \subsection{Fully coupled:}
 
 \begin{dmath}
-  \int_\Omega v \frac{u_n - u_{n-1}}{\Delta t} \; d\Omega + \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \int_\Omega v f \; d\Omega + \int_\Omega v \nabla p \; d\Omega - \int_\Upgamma v g \; d\Upgamma = 0
-\end{dmath}
-\begin{dmath}
-  \int_\Omega v  \left(u_n - u_{n-1} \right) \; d\Omega + \Delta t \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \Delta t \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \Delta t \int_\Omega v f \; d\Omega + \Delta t \int_\Omega v \nabla p \; d\Omega - \Delta t \int_\Upgamma v g \; d\Upgamma = 0
+  \int_\Omega {\bf v} \cdot \left({\bf u}_n - {\bf u}_{n-1} \right) \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \Delta t \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega - \Delta t \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \nabla p \; d\Omega - \Delta t \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
 \end{dmath}
 
-\begin{dgroup*}
-  \begin{dmath}
-    \int v \nabla p = vp - \int \nabla \cdot v p
-  \end{dmath}
-  \begin{dmath}
-    v \nabla p = \nabla \cdot \left( vp \right) - \left(\nabla \cdot v \right) p
-  \end{dmath}
-\end{dgroup*}
+%% \begin{dgroup*}
+%%   \begin{dmath}
+%%     \int {\bf v} \nabla p = {\bf v}p - \int \nabla \cdot {\bf v} p
+%%   \end{dmath}
+%%   \begin{dmath}
+%%     {\bf v} \nabla p = \nabla \cdot \left( {\bf v}p \right) - \left(\nabla \cdot {\bf v} \right) p
+%%   \end{dmath}
+%% \end{dgroup*}
+
+%% \begin{dmath}
+%%   \int_\Omega \nabla \cdot \left( {\bf v}p \right) \; d\Omega = \int_\Upgamma \left({\bf v}p \right) \cdot n \; d\Upgamma
+%% \end{dmath}
+%% \begin{dmath}
+%%   \int_\Omega {\bf v} \left({\bf u}_n - {\bf u}_{n-1} \right) \; d\Omega + \Delta t \int_\Omega {\bf v} \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \Delta t \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega - \Delta t \int_\Omega {\bf v} {\bf f} \; d\Omega-  \Delta t \int_\Omega \left(\nabla \cdot {\bf v} \right) p \; d\Omega - \Delta t \int_\Upgamma {\bf v} h \; d\Upgamma = 0
+%% \end{dmath}
+
+%% \begin{dmath}
+%%   h = g + p \cdot n
+%% \end{dmath}
 
 \begin{dmath}
-  \int_\Omega \nabla \cdot \left( vp \right) \; d\Omega = \int_\Upgamma \left(vp \right) \cdot n \; d\Upgamma
-\end{dmath}
-\begin{dmath}
-  \int_\Omega v \left(u_n - u_{n-1} \right) \; d\Omega + \Delta t \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \Delta t \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \Delta t \int_\Omega v f \; d\Omega-  \Delta t \int_\Omega \left(\nabla \cdot v \right) p \; d\Omega - \Delta t \int_\Upgamma v h \; d\Upgamma = 0
-\end{dmath}
-
-\begin{dmath}
-  h = g + p \cdot n
-\end{dmath}
-
-\begin{dmath}
-  \int_\Omega q \nabla \cdot u_{n-\alpha} \; d\Omega = 0
+  \int_\Omega q \nabla \cdot {\bf u}_{n-\alpha} \; d\Omega = 0 \condition{$\forall q$}
 \end{dmath}
 
 Therefore:
 \begin{dmath}
-  \int_\Omega v \left(u_n - u_{n-1} \right) \; d\Omega + \Delta t \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \Delta t \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \Delta t \int_\Omega v f \; d\Omega-  \Delta t \int_\Omega \left(\nabla \cdot v \right) p \; d\Omega + \int_\Omega q \nabla \cdot u_{n-\alpha} \; d\Omega - \Delta t \int_\Upgamma v h \; d\Upgamma = 0
+  \int_\Omega {\bf v} \cdot \left({\bf u}_n - {\bf u}_{n-1} \right) \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \Delta t \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega \\ - \Delta t \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \nabla p \; d\Omega + \int_\Omega q \nabla \cdot {\bf u}_{n-\alpha} \; d\Omega - \Delta t \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma = 0 \condition{$\forall q \; \forall {\bf v}$}
 \end{dmath}
-
-Is this right?? What do I do about the dirichlet pressure boundary condition?
 
 \subsection{Incremental pressure correction (IPCS):}
 
 Tentative velocity step:
 \begin{dmath}
-  \int_\Omega v \frac{u_* - u_{n-1}}{\Delta t} \; d\Omega + \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \int_\Omega v f \; d\Omega + \int_\Omega v \nabla p_{n-\frac{1}{2}} \; d\Omega - \int_\Upgamma v g \; d\Upgamma = 0
+  \int_\Omega {\bf v} \frac{{\bf u}_* - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega - \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \nabla p_{n-\frac{1}{2}} \; d\Omega \\ - \int_\Upgamma {\bf v} g \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
 \end{dmath}
 
 Corrected velocity:
 \begin{dmath}
-  \int_\Omega v \frac{u_n - u_{n-1}}{\Delta t} \; d\Omega + \int_\Omega v \tilde{u} \cdot \nabla \bar{u} \; d\Omega + \int_\Omega \nabla v \cdot \sigma_{n-\alpha} \; d\Omega - \int_\Omega v f \; d\Omega + \int_\Omega v \nabla p_{n+\frac{1}{2}} \; d\Omega - \int_\Upgamma v g \; d\Upgamma = 0
+  \int_\Omega {\bf v} \cdot \frac{{\bf u}_n - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega - \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla p_{n+\frac{1}{2}} \; d\Omega - \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
 \end{dmath}
 
 (26) - (25):
 \begin{dmath}
-  \int_\Omega v \frac{u_n - u_*}{\Delta t} \; d\Omega + \int_\Omega v \nabla \left(p_{n+\frac{1}{2}} - p_{n-\frac{1}{2}} \right) \; d\Omega = 0
+  \int_\Omega {\bf v} \cdot \frac{{\bf u}_n - {\bf u}_*}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla \left(p_{n+\frac{1}{2}} - p_{n-\frac{1}{2}} \right) \; d\Omega = 0 \condition{$\forall {\bf v}$}
 \end{dmath}
 
-left multiply by \begin{math}\nabla q \frac{1}{v}\end{math}:
+left multiply by the mass matrix and the transpose of the pressure gradient operator:
 
 \begin{dmath}
-  \int_\Omega \nabla q \cdot \frac{u_n - u_*}{\Delta t} \; d\Omega + \int_\Omega \nabla q \cdot \nabla \left(p_{n+\frac{1}{2}} - p_{n-\frac{1}{2}} \right) \; d\Omega = 0
+  \int_\Omega \nabla q \cdot \frac{{\bf u}_n - {\bf u}_*}{\Delta t} \; d\Omega + \int_\Omega \nabla q \cdot \nabla \left(p_{n+\frac{1}{2}} - p_{n-\frac{1}{2}} \right) \; d\Omega = 0 \condition{$\forall q$}
 \end{dmath}
 \begin{dmath}
-  \int_\Omega \nabla q \cdot \frac{u_n}{\Delta t} \; d\Omega - \int_\Omega \nabla q \cdot \frac{u_*}{\Delta t} \; d\Omega + \int_\Omega \nabla q \cdot \nabla \left(p_{n+\frac{1}{2}} - p_{n-\frac{1}{2}} \right) \; d\Omega = 0
+  \int_\Omega \nabla q \cdot {\bf u}_n \; d\Omega - \int_\Omega \nabla q \cdot {\bf u}_* \; d\Omega + \Delta t \int_\Omega \nabla q \cdot \nabla \left(p_{n+\frac{1}{2}} - p_{n-\frac{1}{2}} \right) \; d\Omega = 0 \condition{$\forall q$}
 \end{dmath}
 
-Where do I go from here???
+\begin{dmath}
+  \int_\Omega q \nabla \cdot {\bf u}_{n} \; d\Omega = \int_\Upgamma q \left( {\bf u}_{n} \cdot n \right) \; d\Upgamma - \int_\Omega \nabla q \cdot {\bf u}_{n} = 0 \condition{$\forall q$}
+\end{dmath}
+
+\begin{dmath}
+ \int_\Omega \nabla q \cdot {\bf u}_{n} = \int_\Upgamma q \left( {\bf u}_{n} \cdot n \right) \; d\Upgamma \condition{$\forall q$}
+\end{dmath}
+
+\begin{dmath}
+  \int_\Omega \nabla q \cdot {\bf u}_* \; d\Omega - \int_\Upgamma q \left( {\bf u}_{n} \cdot n \right) \; d\Upgamma = \Delta t \int_\Omega \nabla q \cdot \nabla \left(p_{n+\frac{1}{2}} - p_{n-\frac{1}{2}} \right) \; d\Omega  \condition{$\forall q$}
+\end{dmath}
 
 %% \begin{dmath}
-%%   \int_\Omega q \nabla \cdot u \; d\Omega = 0
+%%   \int_\Omega q \nabla \cdot {\bf u} \; d\Omega = 0
 %% \end{dmath}
 
 %% \begin{dgroup*}
 %%   \begin{dmath}
-%%     \int q \nabla \cdot u = q \cdot u - \int \nabla q \cdot u 
+%%     \int q \nabla \cdot {\bf u} = q \cdot {\bf u} - \int \nabla q \cdot {\bf u} 
 %%   \end{dmath}
 %%   \begin{dmath}
-%%     \nabla \left(q \cdot u \right) - \nabla q \cdot u 
+%%     \nabla \left(q \cdot {\bf u} \right) - \nabla q \cdot {\bf u} 
 %%   \end{dmath}
 %% \end{dgroup*}
 
 %% \begin{dmath}
-%%   \int_\Omega  \nabla \left(q \cdot u \right) \; d\Omega = \int_\Upgamma \left( q \cdot u \right) \cdot n \; d\Upgamma = \int_\Upgamma q u \cdot n \; d\Upgamma
+%%   \int_\Omega  \nabla \left(q \cdot {\bf u} \right) \; d\Omega = \int_\Upgamma \left( q \cdot {\bf u} \right) \cdot n \; d\Upgamma = \int_\Upgamma q {\bf u} \cdot n \; d\Upgamma
 %% \end{dmath}
 
 %% \begin{dmath}
-%%   \int_\Omega \nabla q \cdot u \; d\Omega - \int_\Upgamma q u \cdot n \; d\Upgamma = 0
+%%   \int_\Omega \nabla q \cdot {\bf u} \; d\Omega - \int_\Upgamma q {\bf u} \cdot n \; d\Upgamma = 0
 %% \end{dmath}
 
 %% \begin{dmath}
-%%   \left(\int_\Omega \nabla q \cdot u \; d\Omega - \int_\Upgamma q u \cdot n \; d\Upgamma \right)^\top = \int_\Omega \nabla p \cdot v \; d\Omega - \int_\Upgamma p v \cdot n \; d\Upgamma 
+%%   \left(\int_\Omega \nabla q \cdot {\bf u} \; d\Omega - \int_\Upgamma q {\bf u} \cdot n \; d\Upgamma \right)^\top = \int_\Omega \nabla p \cdot {\bf v} \; d\Omega - \int_\Upgamma p {\bf v} \cdot n \; d\Upgamma 
 %% \end{dmath}
 
 

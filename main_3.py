@@ -3,21 +3,15 @@ from dolfin import *
 
 class NavierStokes():
     def __init__(self):
-        a
+        
     
     def formulate():
-        F = ((1/k)*inner(u - u_1, v)*dx + nu*inner(grad(u), grad(v))*dx + inner(grad(u_1)*u_1, v)*dx 
-             + div(v)*p*dx + q*div(u)*dx - inner(f_u, v)*dx + inner(g*c_s, v)*dx)
-        self.a = lhs(F); self.L = rhs(F)
         
-    def epsilon(self, u):
-        return 0.5*(nabla_grad(u) + nabla_grad(u).T)
-
-    def sigma(self, u, p, nu):
-        return 2*nu*epsilon(u) - p*Identity(u.cell().d)
-
-    def time_discretisation(self, u, u_1, u_2 = None, scheme = 'FE', alpha = 0.5):
         
+    def tau(self, u, nu):
+        return nu*(nabla_grad(u) + nabla_grad(u).T)
+
+    def time_discretisation(self, u_0 = None, u, u_1, u_2 = None, scheme = 'FL', alpha = 0.5, alpha_nl = 0.5):
         u_alpha = alpha*u_1 + (1.0-alpha)*u
         
         if scheme == 'AB': # Adams Bashforth - explicit scheme
@@ -28,6 +22,9 @@ class NavierStokes():
             u_bar = u_alpha
         elif scheme == 'ABP': # Adams Bashforth Projection - implicit scheme
             u_tilde = 1.5*u_1 - 0.5*u_2
+            u_bar = u_alpha
+        elif scheme == 'FL': # Fluidity - implicit scheme
+            u_tilde = alpha_nl*u_1 + (1.0-alpha_nl)*u_0
             u_bar = u_alpha
         else:
             raise Exception('Unknown time-discretisation for velocity') 
