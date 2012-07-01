@@ -2,10 +2,12 @@ from numpy import *
 from dolfin import *
 
 class NavierStokes():
-    def __init__(self):
+    def __init__(self, W):
+        self.w = Function(W)
+        self.u, self.p = split(w)
         
     
-    def formulate():
+    def F(alpha = 0.5, alpha_nl = 0.5, mode = "Standard", scheme = 'FL'):
         
         
     def tau(self, u, nu):
@@ -70,7 +72,10 @@ class SedimentInitialCondition(Expression):
             values[0] = 0.007
         else:
             values[0] = 0.0
-# u_0a = Constant((1.0,0.0))
+
+self.V = VectorFunctionSpace(mesh, "CG", 1)
+self.Q = FunctionSpace(mesh, "CG", 1)
+self.W = V*Q
 
 # Save files
 c_file = File("results/tracer.pvd")
@@ -80,9 +85,6 @@ pe_file = File("results/peclet.pvd")
 
 # Defining the function spaces
 A = FunctionSpace(mesh, "CG", 1)
-V = VectorFunctionSpace(mesh, "CG", 1)
-Q = FunctionSpace(mesh, "CG", 1)
-W = V*Q
 V1 = SubSpace(V, 1)
 
 # Set up boundary condition (apply strong BCs)
@@ -93,14 +95,11 @@ bcu = [noslip, freeslip]
 # Test and trial functions
 a = TestFunction(A)
 c = TrialFunction(A)
-dw = TestFunction(W)  # (v, q) = TestFunctions(W)
-w = TrialFunction(W)  # (u, p) = TrialFunctions(W)
-v, q = split(dw)
 u, p = split(w)
 
 # Solution functions
 w_s = Function(W)
-w_1 = Function(W)
+w = Function(W)
 u_1, p_1 = split(w_1)
 c_s = Function(A)
 c_1 = Function(A)

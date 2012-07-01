@@ -33,13 +33,16 @@
 \begin{document}
 \begin{dgroup*}
   \begin{dmath}
-    \dot{{\bf u}} + {\bf u} \cdot \nabla {\bf u} - \nabla \cdot {\bf \bar{\bar{\tau}}} = {\bf f} - \nabla p 
+    \dot{{\bf u}}_i + {\bf u}_i \cdot \nabla_j {\bf u}_k - \nabla_i \cdot \nu_{ij} \left( \nabla_i {\bf u}_j + \nabla_j {\bf u}_i \right) = {\bf f}_i - \nabla_i p 
+  \end{dmath}
+  \intertext{For constant viscosity}
+  \begin{dmath}
+    \nabla_i \cdot \nu_{ij} \left( \nabla_i {\bf u}_j + \nabla_j {\bf u}_i \right) 
+    = \nu_{ij} \left( \nabla_i \cdot \left(\nabla_i \right) {\bf u}_j + \nabla_i \cdot \left(\nabla_j \right) {\bf u}_i \right) 
+    = \nu_{ij} \nabla_i^2 {\bf u}_j
   \end{dmath}
   \begin{dmath}
     \nabla \cdot {\bf u} = 0 
-  \end{dmath}
-  \begin{dmath}
-    {\bf \bar{\bar{\tau}}} = \nu \left( \nabla {\bf u} + \left(\nabla {\bf u} \right)^\top \right) 
   \end{dmath}
 \end{dgroup*}
 
@@ -55,7 +58,7 @@
 \section{Weak form:}
 
 \begin{dmath}
-  \int_\Omega {\bf v} \cdot \dot{{\bf u}} \; d\Omega + \int_\Omega {\bf v} \cdot {\bf u} \cdot \nabla {\bf u} \; d\Omega - \int_\Omega {\bf v} \cdot \nabla \cdot {\bf \bar{\bar{\tau}}} \; d\Omega = \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega - \int_\Omega {\bf v} \cdot \nabla p \; d\Omega \condition{$\forall {\bf v}$}
+  \int_\Omega {\bf v} \cdot \dot{{\bf u}} \; d\Omega + \int_\Omega {\bf v} \cdot {\bf u} \cdot \nabla {\bf u} \; d\Omega - \int_\Omega {\bf v} \cdot \nabla \cdot \nabla {\bf u} \; d\Omega = \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega - \int_\Omega {\bf v} \cdot \nabla p \; d\Omega \condition{$\forall {\bf v}$}
 \end{dmath}
 
 \noindent
@@ -66,16 +69,16 @@ in 1D:
 in multiple dimensions:
 \begin{dgroup*}
   \begin{dmath}
-     \int_\Omega {\bf v} \cdot \nabla \cdot {\bf \bar{\bar{\tau}}} \; d\Omega = \int_\Upgamma {\bf v} \cdot {\bf \bar{\bar{\tau}}} \cdot n \; d\Upgamma - \int \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}
+     \int_\Omega {\bf v} \cdot \nabla \cdot \nabla {\bf u} \; d\Omega = \int_\Upgamma {\bf v} \cdot \nabla {\bf u} \cdot n \; d\Upgamma - \int \nabla {\bf v} \cdot \nabla {\bf u}
   \end{dmath}
 \end{dgroup*}
 
 \begin{dgroup*}
   \begin{dmath}
-    \int_\Omega {\bf v} \cdot \dot{{\bf u}} \; d\Omega + \int_\Omega {\bf v} \cdot {\bf u} \cdot \nabla {\bf u} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}} \; d\Omega = \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega - \int_\Omega {\bf v} \cdot \nabla p \; d\Omega + \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma \condition{$\forall {\bf v}$}
+    \int_\Omega {\bf v} \cdot \dot{{\bf u}} \; d\Omega + \int_\Omega {\bf v} \cdot {\bf u} \cdot \nabla {\bf u} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u} \; d\Omega = \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega - \int_\Omega {\bf v} \cdot \nabla p \; d\Omega + \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma \condition{$\forall {\bf v}$}
   \end{dmath}
   \begin{dmath}
-    g = {\bf \bar{\bar{\tau}}} \cdot n
+    g = \nabla {\bf u} \cdot n
   \end{dmath}
 \end{dgroup*}
 
@@ -99,10 +102,10 @@ in multiple dimensions:
 \end{dmath}
 
 \begin{dmath}
-  \int_\Omega {\bf v} \cdot \frac{{\bf u}_n - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega = \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla p \; d\Omega + \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma \condition{$\forall {\bf v}$}
+  \int_\Omega {\bf v} \cdot \frac{{\bf u}_n - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u}_{n-\alpha} \; d\Omega = \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla p \; d\Omega + \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma \condition{$\forall {\bf v}$}
 \end{dmath}
 \begin{dmath}
-  {\bf \bar{\bar{\tau}}}_{n-\alpha} = \nu \left( \nabla {\bf u}_{n-\alpha} + \left(\nabla {\bf u}_{n-\alpha} \right)^\top \right) 
+  \nabla {\bf u}_{n-\alpha} = \nu \left( \nabla {\bf u}_{n-\alpha} + \left(\nabla {\bf u}_{n-\alpha} \right)^\top \right) 
 \end{dmath}
 
 \begin{dmath}
@@ -142,7 +145,7 @@ in multiple dimensions:
 \end{dmath}. 
 \end{dgroup*}
 %% \begin{dmath}
-%%   \int_\Omega {\bf v} {\bf u} \; d\Omega + \int_\Omega {\bf v} {\bf u} \cdot \nabla {\bf u} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}} \; d\Omega = \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \nabla p \; d\Omega + \int_\Upgamma {\bf v} g \; d\Upgamma
+%%   \int_\Omega {\bf v} {\bf u} \; d\Omega + \int_\Omega {\bf v} {\bf u} \cdot \nabla {\bf u} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u} \; d\Omega = \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \nabla p \; d\Omega + \int_\Upgamma {\bf v} g \; d\Upgamma
 %% \end{dmath}
 
 \section{Pressure/Conservation:}
@@ -150,7 +153,7 @@ in multiple dimensions:
 \subsection{Fully coupled:}
 
 \begin{dmath}
-  \int_\Omega {\bf v} \cdot \left({\bf u}_n - {\bf u}_{n-1} \right) \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \Delta t \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega - \Delta t \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \nabla p \; d\Omega - \Delta t \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
+  \int_\Omega {\bf v} \cdot \left({\bf u}_n - {\bf u}_{n-1} \right) \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \Delta t \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u}_{n-\alpha} \; d\Omega - \Delta t \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \nabla p \; d\Omega - \Delta t \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
 \end{dmath}
 
 %% \begin{dgroup*}
@@ -166,7 +169,7 @@ in multiple dimensions:
 %%   \int_\Omega \nabla \cdot \left( {\bf v}p \right) \; d\Omega = \int_\Upgamma \left({\bf v}p \right) \cdot n \; d\Upgamma
 %% \end{dmath}
 %% \begin{dmath}
-%%   \int_\Omega {\bf v} \left({\bf u}_n - {\bf u}_{n-1} \right) \; d\Omega + \Delta t \int_\Omega {\bf v} \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \Delta t \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega - \Delta t \int_\Omega {\bf v} {\bf f} \; d\Omega-  \Delta t \int_\Omega \left(\nabla \cdot {\bf v} \right) p \; d\Omega - \Delta t \int_\Upgamma {\bf v} h \; d\Upgamma = 0
+%%   \int_\Omega {\bf v} \left({\bf u}_n - {\bf u}_{n-1} \right) \; d\Omega + \Delta t \int_\Omega {\bf v} \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \Delta t \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u}_{n-\alpha} \; d\Omega - \Delta t \int_\Omega {\bf v} {\bf f} \; d\Omega-  \Delta t \int_\Omega \left(\nabla \cdot {\bf v} \right) p \; d\Omega - \Delta t \int_\Upgamma {\bf v} h \; d\Upgamma = 0
 %% \end{dmath}
 
 %% \begin{dmath}
@@ -179,19 +182,27 @@ in multiple dimensions:
 
 Therefore:
 \begin{dmath}
-  \int_\Omega {\bf v} \cdot \left({\bf u}_n - {\bf u}_{n-1} \right) \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \Delta t \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega \\ - \Delta t \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \nabla p \; d\Omega + \int_\Omega q \nabla \cdot {\bf u}_{n-\alpha} \; d\Omega - \Delta t \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma = 0 \condition{$\forall q \; \forall {\bf v}$}
+  \int_\Omega {\bf v} \cdot \left({\bf u}_n - {\bf u}_{n-1} \right) \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \Delta t \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u}_{n-\alpha} \; d\Omega \\ - \Delta t \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \nabla p \; d\Omega + \int_\Omega q \nabla \cdot {\bf u}_{n-\alpha} \; d\Omega - \Delta t \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma = 0 \condition{$\forall q \; \forall {\bf v}$}
+\end{dmath}
+
+\begin{dmath}
+  \int_\Omega {\bf v} \cdot \nabla p \; d\Omega = \int_\Upgamma {\bf v} \cdot p \cdot n \; d\Upgamma - \int \left( \nabla \cdot {\bf v} \right) p \; d\Omega 
+\end{dmath}
+
+\begin{dmath}
+  \int_\Omega {\bf v} \cdot \left({\bf u}_n - {\bf u}_{n-1} \right) \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \Delta t \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u}_{n-\alpha} \; d\Omega \\ - \Delta t \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega - \Delta t \int \left( \nabla \cdot {\bf v} \right) p \; d\Omega + \int_\Omega q \nabla \cdot {\bf u}_{n-\alpha} \; d\Omega - \Delta t \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma + \int_{\Upgamma_{/N}} {\bf v} \cdot p \cdot n \; d\Upgamma_{/N} + \int_{\Upgamma_N} {\bf v} \cdot p_N \cdot n \; d\Upgamma_N = 0 \condition{$\forall q \; \forall {\bf v}$}
 \end{dmath}
 
 \subsection{Incremental pressure correction (IPCS):}
 
 Tentative velocity step:
 \begin{dmath}
-  \int_\Omega {\bf v} \frac{{\bf u}_* - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega - \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \nabla p_{n-\frac{1}{2}} \; d\Omega \\ - \int_\Upgamma {\bf v} g \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
+  \int_\Omega {\bf v} \frac{{\bf u}_* - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u}_{n-\alpha} \; d\Omega - \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \nabla p_{n-\frac{1}{2}} \; d\Omega \\ - \int_\Upgamma {\bf v} g \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
 \end{dmath}
 
 Corrected velocity:
 \begin{dmath}
-  \int_\Omega {\bf v} \cdot \frac{{\bf u}_n - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot {\bf \bar{\bar{\tau}}}_{n-\alpha} \; d\Omega - \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla p_{n+\frac{1}{2}} \; d\Omega - \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
+  \int_\Omega {\bf v} \cdot \frac{{\bf u}_n - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u}_{n-\alpha} \; d\Omega - \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla p_{n+\frac{1}{2}} \; d\Omega - \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
 \end{dmath}
 
 (26) - (25):
@@ -246,6 +257,41 @@ left multiply by the mass matrix and the transpose of the pressure gradient oper
 %% \end{dmath}
 
 
+\section{Analytical solution:}
+
+\begin{dgroup*}
+  \begin{dmath}
+    \dot{{\bf u}} = 0
+  \end{dmath}
+  \begin{dmath}
+    {\bf u} = \begin{bmatrix} u \\ v \end{bmatrix}
+  \end{dmath}
+  \begin{dmath}
+    u = \text{sin}(x)\text{cos}(y)
+  \end{dmath}
+  \begin{dmath}
+    v = -\text{cos}(x)\text{sin}(y)
+  \end{dmath}
+  \begin{dmath}
+    \nu = 1.0
+  \end{dmath}
+  \begin{dmath}
+    p = \text{cos}(x)\text{cos}(y)
+  \end{dmath}
+\end{dgroup*}
+
+\begin{dgroup*}
+  \begin{dmath}
+    \begin{bmatrix} \dot{u} \\ \dot{v} \end{bmatrix} + \begin{bmatrix} u \\ v \end{bmatrix} \cdot \nabla \begin{bmatrix} u \\ v \end{bmatrix} - \nu \nabla^2 \begin{bmatrix} u \\ v \end{bmatrix} = {\bf f} - \nabla p 
+  \end{dmath}
+  \begin{dmath}
+    \begin{bmatrix} u \\ v \end{bmatrix} \cdot \begin{bmatrix} u_x & u_y \\ v_x & v_y \end{bmatrix} - \nu \begin{bmatrix} u_{xx} + u_{yy} \\ v_{xx} + v_{yy} \end{bmatrix} = {\bf f} - \nabla p 
+  \end{dmath}
+  \begin{dmath}
+    \begin{bmatrix} u u_x + v u_y \\ u v_x + y v_y \end{bmatrix} - \nu \begin{bmatrix} u_{xx} + u_{yy} \\ v_{xx} + v_{yy} \end{bmatrix} + \begin{bmatrix} p_x \\ p_y \end{bmatrix} = {\bf f} 
+    =  \begin{bmatrix} \text{sin}(x)\text{sin}(y)^2\text{cos}(x) + \text{sin}(x)\text{cos}(x)\text{cos}(y)^2 + 2\text{sin}(x)\text{cos}(y) \\ \text{sin}(x)^2\text{sin}(y)\text{cos}(y) + \text{sin}(y)\text{cos}(x)^2\text{cos}(y) - 2\text{sin}(x)\text{cos}(y) - 2\text{sin}(y)\text{cos}(x) \end{bmatrix}
+  \end{dmath}
+\end{dgroup*}
 
 \bibliography{/data/sp911/documents/Bibliography/Bibliography}
 

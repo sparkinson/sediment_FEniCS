@@ -1,0 +1,2 @@
+tex:
+	pdflatex Equations.tex
