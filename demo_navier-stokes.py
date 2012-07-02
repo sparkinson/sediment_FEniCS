@@ -6,6 +6,12 @@ info(parameters, False)
 parameters["std_out_all_processes"] = False;
 parameters["form_compiler"]["cpp_optimize"] = True
 
+# parameters["newton_solver"]["maximum_iterations"] = 200
+# parameters["newton_solver"]["relative_tolerance"] = 1.0e-12
+# parameters["newton_solver"]["absolute_tolerance"] = 1.0e-12
+# parameters["newton_solver"]["error_on_nonconvergence"] = True
+# print parameters["newton_solver"].keys()
+
 u_file = File("results/velocity.pvd")
 p_file = File("results/pressure.pvd")
 f_file = File("results/forcing.pvd")
@@ -21,31 +27,104 @@ nu = Constant(1.0)
 ufile = File("results/velocity.pvd")
 pfile = File("results/pressure.pvd")
 
-# class u_forcing(Expression):
-#     def eval(self, value, x):
-#         value[0] = (sin(x[0])*sin(x[1])**2*cos(x[0]) + 
-#                     sin(x[0])*cos(x[0])*cos(x[1])**2 + 
-#                     sin(x[0])*cos(x[1])
-#                     )
-#         value[1] = (sin(x[0])**2*sin(x[1])*cos(x[1]) + 
-#                     sin(x[1])*cos(x[0])**2*cos(x[1]) - 
-#                     3*sin(x[1])*cos(x[0])
-#                     )
-#     def value_shape(self):
-#         return (2,)
+class NS_args():
+    def __init__(self, u0s = "0.0", u1s = "0.0", ps = "0.0", u0fs = "0.0", u1fs = "0.0"):
+        self.u0s = u0s
+        self.u1s = u1s
+        self.ps = ps
+        self.u0fs = u0fs
+        self.u1fs = u1fs
 
-# class NavierStokes():
-#     def __init__(self, method = "Coupled", IterativeMethod = "PicardIteration", degreeU = 2, degreeP = 1):
-#         if method = "Coupled":
-#             self.V = VectorFunctionSpace(mesh, "CG", degreeU)
-#             self.Q = FunctionSpace(mesh, "CG", degreeP)
-#             self.W = self.V*self.Q
- 
-#             self.w = project(w_e, self.W)
-#             (self.u, self.p) = split(self.w)
-#             (self.v, self.q) = TestFunctions(self.W)
+class NavierStokes():
+    picardTol = 1e-7
 
-def NavierStokes(nx, degreeU, degreeP, method):
+    def __init__(self, degreeU, degreeP, method = "Coupled", itMethod = "Newton", args = NS_args()):
+        self.degreeU = degreeU
+        self.degreeP = degreeP
+        self.method = method
+        self.itMethod = itMethod
+        self.args = args
+
+        self.u_0 = Expression((args.u0s, args.u1s), degree = degreeU + 1)
+        self.p_0 = Expression((args.ps), degree = degreeP + 1)
+        self.w_0 = Expression((args.u0s, args.u1s, ps), degree = degreeU + 1)
+        self.f_0 = Expression((args.u0fs, args.u1fs), degree = degreeU + 1)
+
+    def F(self):
+        return ((inner(grad(self.u_bar)*self.u, self.v)
+                 + nu*inner(grad(self.u), grad(self.v))
+                 - inner(self.v, self.f_0)
+                 - div(self.v)*self.p
+                 )*dx
+                + self.p_0*inner(self.v, n)*ds)
+
+    def F_coupled(self):
+        return self.F() - div(self.u)*self.q*dx
+
+    def P(self):
+        return ((inner(grad(self.p - self.p0), grad(self.q)) - 
+                 inner(self.u1, grad(self.q))
+                 )*dx 
+                + q*inner(self.u1, n)*ds)
+
+    def F_update(self):
+        return (inner(self.u, self.v) - 
+                inner(self.u1, self.v) +
+                inner(grad(self.p1 - self.p0), self.v)
+                )*dx
+
+    def InitialiseCoupledProblem(self):
+        self.V = VectorFunctionSpace(mesh, "CG", self.degreeU)
+        self.Q = FunctionSpace(mesh, "CG", self.degreeP)
+        self.W = self.V*self.Q
+        
+        self.w = project(w_e, self.W)
+        (self.u, self.p) = split(self.w)
+        (self.v, self.q) = TestFunctions(self.W)
+
+        self.bcu  = [DirichletBC(self.W.sub(0), self.u_0, "on_boundary")]
+
+        if self.itMethod == "Newton":
+            self.u_bar = self.u
+            self.solver = self.NewtonCoupledSolver
+        elif self.itMethod == "Picard":
+            self.u0 = project(self.u_0, V)
+            self.p0 = project(self.p_0, Q)
+            self.u_bar = self.u0
+            self.solver = self.PicardCoupledSolver
+
+    def NewtonCoupledSolver(self):
+        solve(self.F() == 0.0, w, self.bcu)
+    
+    def PicardCoupledSolver(self):
+        Eu = 1.0
+        Ep = 1.0
+        while (Eu > self.picardTol or Ep > self.picardTol):
+            solve(self.F() == 0.0, w, self.bcu)
+
+            (u1, p1) = self.w.split(deepcopy = True)
+            Eu = errornorm(u1, u0, norm_type="L2", degree=self.degreeU + 1)
+            Ep = errornorm(p1, p0, norm_type="L2", degree=self.degreeU + 1)
+            print max(Eu, Ep)
+
+            self.u0.assign(u1)
+            self.p0.assign(p1)  
+
+    def InitialiseIPCSProblem(self):
+        self.V = VectorFunctionSpace(mesh, "CG", self.degreeU)
+        self.Q = FunctionSpace(mesh, "CG", self.degreeP)
+
+        # Define trial and test functions
+        self.u = TrialFunction(self.V)
+        self.p = TrialFunction(self.Q)
+        self.v = TestFunction(self.V)
+        self.q = TestFunction(self.Q)
+
+        self.bcu  = [DirichletBC(self.V, self.u_0, "on_boundary")]
+        self.bcp  = [DirichletBC(self.Q, self.p_0, "on_boundary")]
+        
+        
+def NavierStokesTest(nx, degreeU, degreeP, method):
     if method == "IPCS":
         return IPCS(nx, degreeU, degreeP)
     if method == "Coupled":
@@ -80,9 +159,15 @@ def IPCS(nx, degreeU, degreeP):
     # Tentative velocity step
     F1 = (inner(grad(u0)*u0, v)*dx + 
           nu*inner(grad(u), grad(v))*dx - 
-          inner(f_e, v)*dx +
-          inner(grad(p0), v)*dx
+          inner(f_e, v)*dx -
+          div(v)*p1*dx +
+          p_e*inner(v, n)*ds
           )
+    # F1 = (inner(grad(u0)*u0, v) + 
+    #       nu*inner(grad(u), grad(v)) - 
+    #       inner(f_e, v) +
+    #       inner(grad(p0), v)
+    #       )*dx
     a1 = lhs(F1)
     L1 = rhs(F1)
 
@@ -162,30 +247,20 @@ def Coupled(nx, degreeU, degreeP):
     bcu  = [DirichletBC(W.sub(0), u_e, "on_boundary")]
 
     if itMethod == "Newton":
-        F= ((inner(dot(u,grad(u)), v)
+        F= ((inner(grad(u)*u, v)
              + nu*inner(grad(u), grad(v))
              - inner(v, f_e)
              - div(u)*q - div(v)*p
              )*dx
             + p_e*inner(v, n)*ds)
 
-        # solve(F == 0.0, w, bcu)
-        dF = derivative(F, w)
-        pde = NonlinearVariationalProblem(F, w, bcu, dF)
-        solver = NonlinearVariationalSolver(pde)
-        solver.parameters["newton_solver"]["maximum_iterations"] = 200
-        solver.parameters["newton_solver"]["relative_tolerance"] = 1.0e-12
-        solver.parameters["newton_solver"]["absolute_tolerance"] = 1.0e-12
-        solver.parameters["newton_solver"]["error_on_nonconvergence"] = True
-        print solver.parameters["newton_solver"].keys()
-
-        solver.solve()
+        solve(F == 0.0, w, bcu)
 
     elif itMethod == "Picard":
         u0 = project(u_e, V)
         p0 = project(p_e, Q)
         
-        F= ((inner(dot(u,grad(u0)), v)
+        F= ((inner(grad(u0)*u, v)
              + nu*inner(grad(u), grad(v))
              - inner(v, f_e)
              - div(u)*q - div(v)*p
@@ -202,7 +277,6 @@ def Coupled(nx, degreeU, degreeP):
             Ep = errornorm(p_1, p0, norm_type="L2", degree=degreeU + 1)
             print max(Eu, Ep)
 
-            # Move to next time step
             u0.assign(u_1)
             p0.assign(p_1)        
 
@@ -232,7 +306,7 @@ h = [] # element sizes
 E = [] # errors
 for nx in [4, 8, 16, 32]:   
     h.append(pi/nx)
-    E.append(NavierStokes(nx, degreeU, degreeP, method))
+    E.append(NavierStokesTest(nx, degreeU, degreeP, method))
 
 # Convergence rates
 from math import log as ln # (log is a dolfin name too)

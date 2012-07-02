@@ -35,11 +35,11 @@ class NavierStokes():
 
     def conv(self, u_tilde, u_bar, v, mode="Standard"):
         if (mode == "Standard"):
-            return inner(u_tilde*grad(u_bar), v)
+            return inner(grad(u_bar)*u_tilde, v)
         elif (mode == "Divergence"):
             return inner(div(outer(u_tilde, u_bar)), v)
         elif (mode == "Skew"):
-            return 0.5*(inner(u_tilde*grad(u_bar), v) + \
+            return 0.5*(inner(grad(u_bar)*u_tilde, v) + \
                             inner(div(outer(u_tilde, u_bar)), v))
         else:
             raise Exception('Unknown convection mode') 
