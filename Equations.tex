@@ -193,6 +193,11 @@ Therefore:
   \int_\Omega {\bf v} \cdot \left({\bf u}_n - {\bf u}_{n-1} \right) \; d\Omega + \Delta t \int_\Omega {\bf v} \cdot \tilde{{\bf u}} \cdot \nabla \bar{{\bf u}} \; d\Omega + \Delta t \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u}_{n-\alpha} \; d\Omega \\ - \Delta t \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega - \Delta t \int \left( \nabla \cdot {\bf v} \right) p \; d\Omega + \int_\Omega q \nabla \cdot {\bf u}_{n-\alpha} \; d\Omega - \Delta t \int_\Upgamma {\bf v} \cdot {\bf g} \; d\Upgamma + \int_{\Upgamma_{/N}} {\bf v} \cdot p \cdot n \; d\Upgamma_{/N} + \int_{\Upgamma_N} {\bf v} \cdot p_N \cdot n \; d\Upgamma_N = 0 \condition{$\forall q \; \forall {\bf v}$}
 \end{dmath}
 
+\begin{dmath}
+ \int_\Omega {\bf v} \cdot {\bf u} \cdot \nabla {\bf u} \; d\Omega = \int_\Upgamma \left( {\bf v} \cdot {\bf u} \right) \left( {\bf u} \cdot n \right) \; d\Upgamma - \int_\Omega \left( \nabla {\bf v} \cdot {\bf u} \right) {\bf u} \; d\Omega - \int_\Omega \left ( {\bf v} \cdot \nabla {\bf u} \right) {\bf u} \; d\Omega
+\end{dmath}
+
+
 \subsection{Incremental pressure correction (IPCS):}
 
 Tentative velocity step:
