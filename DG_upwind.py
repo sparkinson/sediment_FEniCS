@@ -10,21 +10,29 @@ def main():
 
     # generate function spaces and functions
     V = VectorFunctionSpace(mesh, "CG", shape_U)
-    D = FunctionSpace(mesh, "DG", shape_C)
+    D = FunctionSpace(mesh, ele_type, shape_C)
     u = project(u_0, V)
     c = TrialFunction(D)   
     d = TestFunction(D) 
     c1 = project(c_0, D)
 
-    # define equations to be solved
-    # dg advection
-    a_omega = (inner(grad(d), - u*c))*dx
-    a_int = (inner(jump(d, n), u('+')*c('+')))*dS
-    a_ext = (inner(d*n, u('+')*c('+')))*ds
-    # a_stab = 0.5*abs(inner(u('+'), n('+')))*inner(jump(c, n), jump(d, n))*dS
-    a = a_omega + a_int #+ a_ext # + a_stab
+    # define equations to be solved    
+    a_omega = (   inner(grad(d), k*grad(c) - u*c)   )*dx
+    #a_ext = (   inner(d*n, u*c)   )*ds
+    a = a_omega #+ a_ext
     L = c*fc_0*dx
-
+    if ele_type == "DG":
+        un = (dot(u, n) - abs(dot(u, n)))/2.0
+        # a_ext = (   inner(d, un*c)   )*ds
+        # a_ext = (   inner(d*n, u('+')*c('+'))   )*ds
+        a_int = (   - k('+')*inner(jump(d, n), avg(grad(c)))
+                    - k('+')*inner(jump(c, n), avg(grad(d)))
+                    # + dot(jump(d), un('+')*c('+') - un('-')*c('-'))
+                    + inner(jump(d, n), u('+')*c('+'))                 
+                )*dS
+        a_stab = (    alpha('+')*k('+')/h('+')*inner(jump(d,n),jump(c,n))    )*dS
+        a += a_int + a_stab # + a_ext
+    
     # prescribe dirichlet boundary conditions
     bcc  = [DirichletBC(D, c_0, "on_boundary")]
 
@@ -44,6 +52,7 @@ def main():
 import sys
 shape_U = int(sys.argv[1]) 
 shape_C = int(sys.argv[2]) 
+ele_type = sys.argv[3] 
 
 # show parameters
 info(parameters, False)
@@ -51,13 +60,17 @@ info(parameters, False)
 # initialise save files
 c_file = File("results/tracer.pvd")
 
+# define constants
+k = Constant(1.0)
+alpha = Constant(5.0)
+
 # describe initial conditions (also analytical solutions) - as strings
-u0s = "sin(x[0])*cos(x[1])"
-u1s = "-cos(x[0])*sin(x[1])"
-cs = "-cos(x[0])*cos(x[1])"
+u0s = "2.0 + sin(x[0])*cos(x[1])"
+u1s = "2.0 - cos(x[0])*sin(x[1])"
+cs = "sin(x[0])*sin(x[1])"
 
 # describe source terms - as strings
-fcs = ("pow(sin(x[0]),2)*pow(cos(x[1]),2) - pow(sin(x[1]),2)*pow(cos(x[0]),2)")
+fcs = ("-(sin(x[1])*cos(x[0]) - 2.00)*sin(x[0])*cos(x[1]) + (sin(x[0])*cos(x[1]) + 2.00)*sin(x[1])*cos(x[0]) + 2*sin(x[0])*sin(x[1])")
 
 # generate expressions for initial conditions, boundary conditions and source terms
 u_0 = Expression((u0s, u1s), degree = shape_U + 1)
