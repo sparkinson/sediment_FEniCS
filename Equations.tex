@@ -298,6 +298,29 @@ left multiply by the mass matrix and the transpose of the pressure gradient oper
   \end{dmath}
 \end{dgroup*}
 
+\section{DG Advection:}
+
+\begin{dgroup}
+  \begin{dmath}
+    \nabla \cdot \left( {\bf u} c \right) - \nabla \cdot \left( \bar{\bar{k}} \cdot \nabla c \right) = s
+  \end{dmath}
+  \intertext{Assume diffusivity is isentropic. Multiply by test function, integrate over each element, sum over the domain and integrate both left-hand side terms by parts}
+  \begin{dmath}
+    \sum \int_{\Omega_E} \nabla \phi \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Omega_E} = 
+    \sum \int_{\Omega_E} \phi s \; d{\Omega_E} + \sum \int_{\Upgamma_E} \phi \, {\bf n} \cdot \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Upgamma_E}
+  \end{dmath}
+  \intertext{Now surface integrals are multiply defined - we need to choose a solution}
+  \begin{dmath}
+    \sum \int_{\Omega_E} \nabla \phi \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Omega_E} = 
+    \sum \int_{\Omega_E} \phi s \; d{\Omega_E} + \int_{\Upgamma_n} \phi \, {\bf n} \cdot \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Upgamma_n} + \sum \int_{\Upgamma_{int}} \phi \, {\bf n} \cdot \left( k \cdot \nabla c - {\bf u} c \right)_* \; d{\Upgamma_{int}}
+  \end{dmath}
+  \intertext{simplest is to take an average at the internal faces}
+  \begin{dmath}
+    \sum \int_{\Omega_E} \nabla \phi \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Omega_E} = 
+    \sum \int_{\Omega_E} \phi s \; d{\Omega_E} + \int_{\Upgamma_n} \phi \, {\bf n} \cdot \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Upgamma_n} + \sum \int_{\Upgamma_{int}} \left| \phi \, {\bf n} \right| \cdot \left\{ \left\{ k \cdot \nabla c - {\bf u} c \right\} \right\} \; d{\Upgamma_{int}}
+  \end{dmath}
+\end{dgroup}
+
 \bibliography{/data/sp911/documents/Bibliography/Bibliography}
 
 \end{document}

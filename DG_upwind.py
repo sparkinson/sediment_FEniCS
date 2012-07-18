@@ -18,20 +18,13 @@ def main():
 
     # define equations to be solved    
     a_omega = (   inner(grad(d), k*grad(c) - u*c)   )*dx
-    #a_ext = (   inner(d*n, u*c)   )*ds
-    a = a_omega #+ a_ext
+    a_ext = (   inner(d*n, u*c)   )*ds
+    a = a_omega + a_ext
     L = c*fc_0*dx
     if ele_type == "DG":
         un = (dot(u, n) - abs(dot(u, n)))/2.0
-        # a_ext = (   inner(d, un*c)   )*ds
-        # a_ext = (   inner(d*n, u('+')*c('+'))   )*ds
-        a_int = (   - k('+')*inner(jump(d, n), avg(grad(c)))
-                    - k('+')*inner(jump(c, n), avg(grad(d)))
-                    # + dot(jump(d), un('+')*c('+') - un('-')*c('-'))
-                    + inner(jump(d, n), u('+')*c('+'))                 
-                )*dS
-        a_stab = (    alpha('+')*k('+')/h('+')*inner(jump(d,n),jump(c,n))    )*dS
-        a += a_int + a_stab # + a_ext
+        a_int = (   inner(jump(d, n), avg(u*c) - avg(k)*avg(grad(c)))    )*dS
+        a += a_int
     
     # prescribe dirichlet boundary conditions
     bcc  = [DirichletBC(D, c_0, "on_boundary")]
