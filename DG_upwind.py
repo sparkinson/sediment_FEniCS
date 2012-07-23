@@ -20,9 +20,8 @@ def main():
     a_omega = (   inner(grad(d), k*grad(c) - u*c)   )*dx
     a_ext = (   inner(d*n, u*c)   )*ds
     a = a_omega + a_ext
-    L = c*fc_0*dx
+    L = d*fc_0*dx
     if ele_type == "DG":
-        un = (dot(u, n) - abs(dot(u, n)))/2.0
         a_int = (   inner(jump(d, n), avg(u*c) - avg(k)*avg(grad(c)))    )*dS
         a += a_int
     
@@ -58,12 +57,12 @@ k = Constant(1.0)
 alpha = Constant(5.0)
 
 # describe initial conditions (also analytical solutions) - as strings
-u0s = "2.0 + sin(x[0])*cos(x[1])"
-u1s = "2.0 - cos(x[0])*sin(x[1])"
-cs = "sin(x[0])*sin(x[1])"
+u0s = "-sin(x[1]) + cos(x[0]) + 1.00"
+u1s = "sin(x[1]) - cos(x[0]) + 1.00"
+cs = "sin(x[1]) + 0.700*cos(x[0]) + 3.00"
 
 # describe source terms - as strings
-fcs = ("-(sin(x[1])*cos(x[0]) - 2.00)*sin(x[0])*cos(x[1]) + (sin(x[0])*cos(x[1]) + 2.00)*sin(x[1])*cos(x[0]) + 2*sin(x[0])*sin(x[1])")
+fcs = ("-0.700*(-sin(x[1]) + cos(x[0]) + 1.00)*sin(x[0]) + (sin(x[1]) - cos(x[0]) + 1.00)*cos(x[1]) - (sin(x[1]) + 0.700*cos(x[0]) + 3.00)*(sin(x[0]) - cos(x[1])) + sin(x[1]) + 0.700*cos(x[0])")
 
 # generate expressions for initial conditions, boundary conditions and source terms
 u_0 = Expression((u0s, u1s), degree = shape_U + 1)
