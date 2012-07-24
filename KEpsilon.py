@@ -1,4 +1,6 @@
 from dolfin import *
+import numpy as np
+import KEpsilon_MMSFunctions as mms
 
 parameters["std_out_all_processes"] = True;
 parameters["form_compiler"]["cpp_optimize"] = True
@@ -39,6 +41,12 @@ def main():
     ############################################################
 
     # define equations to be solved
+
+    # calculate dt
+    # u_ = w.split(deepcopy=True)[0]
+    # u_max = (np.sqrt(u_.vector().array()[0]**2 + u_.vector().array()[1]**2)).max()
+    dt = ((pi/nx))*CFL
+    print 'dt is: ', dt
     k = Constant(dt)
 
     # time-averaged values
@@ -47,11 +55,12 @@ def main():
     ke_ta = theta*ke+(1.0-theta)*ke_1
     eps_ta = theta*eps+(1.0-theta)*eps_1
 
-    # define stress tensors
+    # define stress tensors - !!!partly explicit!!!
     tau = 2.0*nu*sym(grad(u_ta)) 
-    nu_T = Constant(0.0) 
-    # nu_T = ke_ta**2/eps_ta
-    tau_R = 2.0*nu_T*sym(grad(u_ta)) #- (2./3.)*ke*Identity(2)
+    nu_T = (ke_1**2)/eps_1
+    # nu_T_e = Expression(mms.nu_T(), degree = shape_U + 1)
+    # nu_T = project(nu_T_e, D)
+    tau_R = 2.0*nu_T*sym(grad(u_ta))# - (2./3.)*ke_1*Identity(2)
 
     # momentum equation
     F = (((1/k)*inner(u - u_1, v)
@@ -64,28 +73,31 @@ def main():
          + p_ta*inner(v, n)*ds)
 
     # turbulent kinetic energy
-    P = inner(grad(u_ta), tau_R - (2./3.)*ke_ta*Identity(2))
-    KE_a = (((1/k)*inner(ke - ke_1, ke_)
-             + inner(grad(ke_), nu_T*grad(ke_ta))
+    P = inner(grad(u_ta), tau_R - (2./3.)*ke_1*Identity(2))
+    F_KE = (((1/k)*inner(ke - ke_1, ke_)
              + ke_*inner(u_ta, grad(ke_ta))
-             )*dx 
-            )
-    KE_L = (ke_*f_ke_0
-            #+ ke_*P #- ke_*eps_ta
-            )*dx
-    F_KE = KE_a - KE_L
-
-    # turbulent dissipation
-    EPS_a = (((1/k)*inner(eps - eps_1, eps_)
-              + inner(grad(eps_), nu_T*grad(eps_ta))
-              + eps_*inner(u_ta, grad(eps_ta))
-              #- eps_*(eps_ta/ke_ta)*P
-              #+ eps_*(eps_ta**2/ke_ta)
-              )*dx 
-             )
-    EPS_L = (eps_*f_eps_0
+             + inner(grad(ke_), nu_T*grad(ke_ta))
+             - ke_*f_ke_0
+             - ke_*P
+             + ke_*eps_ta
              )*dx
-    F_EPS = EPS_a - EPS_L
+            - 
+            (inner(ke_*n, nu_T*grad(ke_ta))
+             )*ds 
+            )
+    
+    # turbulent dissipation
+    F_EPS = (((1/k)*inner(eps - eps_1, eps_)
+              + eps_*inner(u_ta, grad(eps_ta))
+              + inner(grad(eps_), nu_T*grad(eps_ta))
+              - eps_*f_eps_0
+              - eps_*(eps_1/ke_1)*P
+              + eps_*eps_ta*(eps_1/ke_1)
+              )*dx
+             - 
+             (inner(eps_*n, nu_T*grad(eps_ta))
+              )*ds 
+             )
 
     ############################################################
 
@@ -108,7 +120,7 @@ def main():
 
     t = dt
     dE = 1.0; Eu_1 = 1.0; Ep_1 = 1.0; Eke_1 = 1.0; Eeps_1 = 1.0
-    while (t < T and dE > ss_tol):
+    while (t < T and dE > ss_tol * (dt*10)):
         # solve equations
     
         nl_it = 0
@@ -116,11 +128,11 @@ def main():
         while nl_it < nl_its and dnl > nl_tol:
 
             # kinetic energy
-            #print 'solving for ke'
-            solve(F_KE == 0.0, ke, bcs=bcke)
+            # print 'solving for ke'
+            solve(F_KE == 0.0, ke, bcke)
             
             # epsilon
-            #print 'solving for eps'
+            # print 'solving for eps'
             dF_EPS = derivative(F_EPS, eps)
             pde = NonlinearVariationalProblem(F_EPS, eps, bceps, dF_EPS)
             solver = NonlinearVariationalSolver(pde)
@@ -129,7 +141,7 @@ def main():
             solver.solve() 
         
             # momentum
-            #print 'solving for momentum'
+            # print 'solving for momentum'
             dF = derivative(F, w)
             pde = NonlinearVariationalProblem(F, w, bcw, dF)
             solver = NonlinearVariationalSolver(pde)
@@ -155,6 +167,8 @@ def main():
 
         t += dt
         # print t
+
+        ############################################################
         
         # Compute error
         Eu = errornorm(w.split()[0], u_0, norm_type="L2", degree=shape_U + 1)
@@ -173,18 +187,23 @@ def main():
 
         # print Eu, Ep, Eke, Eeps
 
+    ############################################################
+
     # Save to file
     u_file << w.split()[0]
     p_file << w.split()[1]
     ke_file << ke
     eps_file << eps
+    P_ke_file << project(P, D)
 
     return Eu, Ep, Eke, Eeps
+
+############################################################
 
 # mms test
 
 # show parameters
-info(parameters, True)
+info(parameters, False)
 parameters["form_compiler"]["quadrature_degree"] = 8
 set_log_active(False)
    
@@ -192,14 +211,14 @@ set_log_active(False)
 import sys
 shape_U = int(sys.argv[1]) 
 shape_P = int(sys.argv[2]) 
-CFS = float(sys.argv[3])
+CFL = float(sys.argv[3])
 T = float(sys.argv[4])
 nl_its = int(sys.argv[5])
 ss_tol = float(sys.argv[6])
 nl_tol = float(sys.argv[7])
 
 # set hard-coded variables
-theta = Constant(1.0)
+theta = Constant(0.5)
 nu = Constant(1.0)
 
 # initialise save files
@@ -207,17 +226,19 @@ u_file = File("results/velocity.pvd")
 p_file = File("results/pressure.pvd")
 ke_file = File("results/ke.pvd")
 eps_file = File("results/eps.pvd")
+P_ke_file = File("results/P_ke.pvd")
 
 # describe initial conditions (also analytical solutions) and forcing - as strings
-u0_s = (' sin(x[0])*cos(x[1]) ')
-u1_s = (' -sin(x[1])*cos(x[0]) ')
-p_s = (' -cos(x[0])*cos(x[1]) ')
-ke_s = (' x[0] ')
-eps_s = (' x[0] ')
-u0_fs = (' sin(x[0])*pow(sin(x[1]),2)*cos(x[0]) + sin(x[0])*cos(x[0])*pow(cos(x[1]),2) + 3.0*sin(x[0])*cos(x[1]) ')
-u1_fs = (' pow(sin(x[0]),2)*sin(x[1])*cos(x[1]) + sin(x[1])*pow(cos(x[0]),2)*cos(x[1]) - sin(x[1])*cos(x[0]) ')
-ke_fs = (' sin(x[0])*cos(x[1]) ')
-eps_fs = (' sin(x[0])*cos(x[1]) ')
+u0_s = mms.u0_s()
+u1_s = mms.u1_s()
+p_s = mms.p_s()
+ke_s = mms.ke_s()
+eps_s = mms.eps_s()
+u0_fs = mms.u0_fs()
+u1_fs = mms.u1_fs()
+ke_fs = mms.ke_fs()
+eps_fs = mms.eps_fs()
+P0_s = mms.P0_s()
 
 # generate expressions for initial conditions, boundary conditions and source terms
 u_0 = Expression((u0_s, u1_s), degree = shape_U + 1)
@@ -231,10 +252,8 @@ f_eps_0 = Expression(eps_fs, degree = shape_U + 1)
 
 h = [] # element sizes
 E = [] # errors
-for nx in [8, 16, 32, 64, 128]:#, 256]: 
+for nx in [4, 8, 16, 32]:#, 64]:#, 128]: 
     h.append(pi/nx)
-    dt = (pi/nx)/5.0
-    print 'dt is: ', dt
     E.append(main())
 
 # Convergence rates

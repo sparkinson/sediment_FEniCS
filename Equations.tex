@@ -359,6 +359,10 @@ Always dirichlet or zero neumann boundary conditions:
 \end{dmath}
 
 \begin{dmath}
+  \frac{\partial k_i}{t} + \frac{\partial \left( {\bf u} k \right)_i}{\partial x_j} - \nu_T \frac{\partial}{x_j}\left( \frac{\partial k}{x_j} \right) - \frac{\partial \nu_T}{\partial x_j} \frac{\partial k}{\partial x_j} = s + \frac{\partial u_i}{\partial x_j} \tau_{ij}^R - \epsilon
+\end{dmath}
+
+\begin{dmath}
   \int_\Omega \eta \frac{\partial k_i}{t} \; dx + \int_\Omega \eta \frac{\partial \left( {\bf u} k \right)_i}{\partial x_j} \; dx - \int_\Omega \eta \frac{\partial}{\partial x_j} \left( \nu_T \frac{\partial k}{x_j} \right) \; dx = \int_\Omega \eta s \; dx + \int_\Omega \eta \frac{\partial u_i}{\partial x_j} \tau_{ij}^R \; dx - \int_\Omega \eta \epsilon \; dx
 \end{dmath}
 
