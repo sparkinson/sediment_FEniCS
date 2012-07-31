@@ -1,4 +1,5 @@
 from dolfin import *
+import NavierStokes_MMSFunctions as mms
 
 parameters["std_out_all_processes"] = True;
 parameters["form_compiler"]["cpp_optimize"] = True
@@ -172,17 +173,13 @@ u_file = File("results/velocity.pvd")
 p_file = File("results/pressure.pvd")
 
 # describe initial conditions (also analytical solutions) - as strings
-u0s = "sin(x[0])*cos(x[1])"
-u1s = "-cos(x[0])*sin(x[1])"
-ps = "cos(x[0])*cos(x[1])"
+u0s = mms.u_s()
+u1s = mms.v_s()
+ps = mms.p_s()
 
 # describe source terms - as strings
-u0fs = ("sin(x[0])*pow(sin(x[1]),2)*cos(x[0])" + 
-        "+ sin(x[0])*cos(x[0])*pow(cos(x[1]),2)" + 
-        "+ sin(x[0])*cos(x[1])")
-u1fs = ("pow(sin(x[0]),2)*sin(x[1])*cos(x[1])" + 
-        "+ sin(x[1])*pow(cos(x[0]),2)*cos(x[1])" + 
-        "- 3*sin(x[1])*cos(x[0])")
+u0fs = mms.u_fs()
+u1fs = mms.v_fs()
 
 # set constants
 nu = Constant(1.0)

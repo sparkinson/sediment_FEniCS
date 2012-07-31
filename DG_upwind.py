@@ -1,4 +1,5 @@
 from dolfin import *
+import DG_upwind_MMSFunctions as mms
 
 parameters["std_out_all_processes"] = True;
 parameters["form_compiler"]["cpp_optimize"] = True
@@ -17,13 +18,17 @@ def main():
     c1 = project(c_0, D)
 
     # define equations to be solved    
-    a_omega = (   inner(grad(d), k*grad(c) - u*c)   )*dx
-    a_ext = (   inner(d*n, u*c)   )*ds
-    a = a_omega + a_ext
+    a = inner(grad(d), kappa*grad(c) - u*c)*dx
     L = d*fc_0*dx
     if ele_type == "DG":
-        a_int = (   inner(jump(d, n), avg(u*c) - avg(k)*avg(grad(c)))    )*dS
+        # un = u.n for upwind element and 0 for downwind element
+        un = (dot(u, n) + abs(dot(u, n)))/2.0
+        a_int = (dot(jump(d), un('+')*c('+') - un('-')*c('-') )*dS) 
         a += a_int
+        a_ext = (dot(d, un*c)*ds)
+    else:
+        a_ext = inner(d*n, u*c)*ds
+    a += a_ext
     
     # prescribe dirichlet boundary conditions
     bcc  = [DirichletBC(D, c_0, "on_boundary")]
@@ -53,21 +58,21 @@ info(parameters, False)
 c_file = File("results/tracer.pvd")
 
 # define constants
-k = Constant(1.0)
+kappa = Constant(0.0)
 alpha = Constant(5.0)
 
 # describe initial conditions (also analytical solutions) - as strings
-u0s = "-sin(x[1]) + cos(x[0]) + 1.00"
-u1s = "sin(x[1]) - cos(x[0]) + 1.00"
-cs = "sin(x[1]) + 0.700*cos(x[0]) + 3.00"
+u0s = mms.u0_s
+u1s = mms.u1_s
+cs = mms.c_s
 
 # describe source terms - as strings
-fcs = ("-0.700*(-sin(x[1]) + cos(x[0]) + 1.00)*sin(x[0]) + (sin(x[1]) - cos(x[0]) + 1.00)*cos(x[1]) - (sin(x[1]) + 0.700*cos(x[0]) + 3.00)*(sin(x[0]) - cos(x[1])) + sin(x[1]) + 0.700*cos(x[0])")
+cfs = mms.c_fs
 
 # generate expressions for initial conditions, boundary conditions and source terms
-u_0 = Expression((u0s, u1s), degree = shape_U + 1)
-c_0 = Expression((cs), degree = shape_C + 1)
-fc_0 = Expression((fcs), degree = shape_C + 1)
+u_0 = Expression(('2*pi', '0.0'), degree = shape_U + 1)
+c_0 = Expression('sin(x[0] - 2*pi*t', t=0, degree = shape_C + 1)
+fc_0 = Expression('0.0', degree = shape_C + 1)
 
 h = [] # element sizes
 E = [] # errors

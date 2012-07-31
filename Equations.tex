@@ -302,24 +302,139 @@ left multiply by the mass matrix and the transpose of the pressure gradient oper
 
 \begin{dgroup}
   \begin{dmath}
-    \nabla \cdot \left( {\bf u} c \right) - \nabla \cdot \left( \bar{\bar{k}} \cdot \nabla c \right) = s
+    \nabla \cdot \left( {\bf u} c \right) = s
   \end{dmath}
   \intertext{Assume diffusivity is isentropic. Multiply by test function, integrate over each element, sum over the domain and integrate both left-hand side terms by parts}
   \begin{dmath}
-    \sum \int_{\Omega_E} \nabla \phi \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Omega_E} = 
-    \sum \int_{\Omega_E} \phi s \; d{\Omega_E} + \sum \int_{\Upgamma_E} \phi \, {\bf n} \cdot \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Upgamma_E}
+    - \int_{\Omega} \nabla \phi \left( {\bf u} c \right) = - \sum_E \int_{E} \nabla \phi \left( {\bf u} c \right) = 
+    \sum_E \int_{E} \phi s - \sum_E \int_{\partial E} \phi \, {\bf n} \cdot {\bf u} c
   \end{dmath}
-  \intertext{Splitting the internal and domain surfaces}
   \begin{dmath}
-    \sum \int_{\Omega_E} \nabla \phi \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Omega_E} = 
-    \sum \int_{\Omega_E} \phi s \; d{\Omega_E} + \int_{\Upgamma_n} \phi \, {\bf n} \cdot \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Upgamma_n} + \sum \int_{\Upgamma_{int}} \phi \, {\bf n} \cdot \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Upgamma_{int}}
+    - \sum_E \int_{E} \nabla \phi_h \left( {\bf u}_h c_h \right) = 
+    \sum_E \int_{E} \phi_h s_h - \sum_E \int_{\partial E} \phi_h \, {\bf n} \cdot {\bf u}_h^0 c_h^0
   \end{dmath}
-  \intertext{But the internal surfaces are not consistent - the simplest solution is to take an average at the internal faces}
   \begin{dmath}
-    \sum \int_{\Omega_E} \nabla \phi \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Omega_E} = 
-    \sum \int_{\Omega_E} \phi s \; d{\Omega_E} + \int_{\Upgamma_n} \phi \, {\bf n} \cdot \left( k \cdot \nabla c - {\bf u} c \right) \; d{\Upgamma_n} + \sum \int_{\Upgamma_{int}} \left| \phi \, {\bf n} \right| \cdot \left\{ \left\{ k \cdot \nabla c - {\bf u} c \right\} \right\} \; d{\Upgamma_{int}}
+    \sum_E \int_{\Omega} \phi_h \nabla \left( {\bf u}_h c_h \right) + \sum_E \int_{\partial E} \phi_h \, {\bf n} \cdot \left( {\bf u}_h^0 c_h^0 - {\bf u}_h c_h \right) - \sum_E \int_{\Omega} \phi_h s_h = 0    
+  \end{dmath}
+  \begin{dmath}
+    \sum_E \int_{\Omega} \phi_h \nabla \left( {\bf u}_h c_h \right) + \sum_e \left[ \int_{\partial e'} \phi_h \, {\bf n} \cdot \left( {\bf u}_h^0 c_h^0 - {\bf u}_h c_h \right) + \int_{\partial e_D} \phi_h \, {\bf n} \cdot \left( {\bf u}_h g_D - {\bf u}_h c_h \right) \right] \\- \sum_E \int_{\Omega} \phi_h s_h = 0    
   \end{dmath}
 \end{dgroup}
+\begin{dgroup}
+  \intertext{Using upwinding}
+  \begin{dmath}
+    {\bf u}_h^0 c_h^0 = {\bf u}_h^{up} c_h^{up}
+  \end{dmath}
+  \begin{dmath}
+    \int_{\partial e'} \phi_h \, {\bf n} \cdot \left( {\bf u}_h^0 c_h^0 - {\bf u}_h c_h \right) = 
+    \int_{\partial e'} \phi_h^+ \, {\bf n}^+ \cdot \left( {\bf u}_h^{up} c_h^{up} - {\bf u}_h^+ c_h^+ \right) +
+    \int_{\partial e'} \phi_h^- \, {\bf n}^- \cdot \left( {\bf u}_h^{up} c_h^{up} - {\bf u}_h^- c_h^- \right)  
+  \end{dmath}
+  \begin{dmath}
+    \gamma = \frac{\left( {\bf n} \cdot {\bf u} + \left| {\bf n} \cdot {\bf u} \right| \right)}{2 \left| {\bf n} \cdot {\bf u} \right|} , upwind \; 1.0, downwind \; 0.0
+  \end{dmath}
+  \begin{dmath}
+    \int_{\partial e'} \phi_h^+ \, {\bf n}^+ \cdot \left( {\bf u}_h^{up} c_h^{up} - {\bf u}_h^+ c_h^+ \right) +
+    \int_{\partial e'} \phi_h^- \, {\bf n}^- \cdot \left( {\bf u}_h^{up} c_h^{up} - {\bf u}_h^- c_h^- \right) =\\
+    \int_{\partial e'} \left( \phi_h^+ \, {\bf n}^+ + \phi_h^- \, {\bf n}^- \right) \cdot \left( \gamma^+ {\bf u}_h^+ c_h^+  + \gamma^- {\bf u}_h^- c_h^- \right) - \int_{\partial e'} \left( \phi_h^+ \, {\bf n}^+ \cdot {\bf u}_h^+ c_h^+ + \phi_h^- \, {\bf n}^- \cdot {\bf u}_h^- c_h^- \right) = \\
+    \int_{\partial e'} \left[\left[ \phi_h \, {\bf n} \right]\right] \cdot \left( \gamma^+ {\bf u}_h^+ c_h^+  + \gamma^- {\bf u}_h^- c_h^- \right) - \int_{\partial e'} \left[\left[ \phi_h \, {\bf n} \cdot {\bf u}_h c_h \right]\right]
+  \end{dmath}
+\end{dgroup}
+
+
+  \begin{dmath}
+    \sum_E \int_{\Omega} \phi_h \nabla \left( {\bf u}_h c_h \right) + \sum_e \left[ \int_{\partial e'} \left[\left[ \phi_h \, {\bf n} \right]\right] \cdot \left( \gamma^+ {\bf u}_h^+ c_h^+  + \gamma^- {\bf u}_h^- c_h^- \right) - \int_{\partial e'} \left[\left[ \phi_h \, {\bf n} \cdot {\bf u}_h c_h \right]\right] + \int_{\partial e_D} \phi_h \, {\bf n} \cdot \left( {\bf u}_h g_D - {\bf u}_h c_h \right) \right] \\- \sum_E \int_{\Omega} \phi_h s_h = 0    
+  \end{dmath}
+
+
+~
+
+~
+
+~
+
+~
+
+~
+
+~
+
+~
+
+~
+
+\begin{dgroup}
+  \begin{dmath}
+    - \sum_e \int_{\Omega} \nabla \phi_h \left( {\bf u}_h c_h \right) \; d{\Omega} = 
+    \sum_e \int_{\Omega} \phi_h s_h \; d{\Omega} - \sum_f \int_{\Upgamma'} \phi_h \, {\bf n} \cdot {\bf u}_h^0 c_h^0 \; d{\Upgamma'} \\ - \sum_f \int_{\Upgamma_D} \phi_h \, {\bf n} \cdot {\bf u}_h g_D \; d{\Upgamma_D} - \sum_f \int_{\Upgamma_N} \phi_h \, {\bf n} \cdot {\bf u}_h c_h \; d{\Upgamma_N}
+  \end{dmath}
+  \begin{dmath}
+    - \sum_e \int_{\Omega} \nabla \phi \left( {\bf u} c \right) \; d{\Omega} = 
+    \sum_e \int_{\Omega} \phi s \; d{\Omega} - \sum_f \int_{\Upgamma} \phi \, {\bf n} \cdot {\bf u} c \; d{\Upgamma}
+  \end{dmath}
+  \intertext{Using upwinding}
+  \begin{dmath}
+    \sum_f \int_{\Upgamma} \phi \, {\bf n} \cdot {\bf u} c \; d{\Upgamma} = 
+    \sum_f \left[ \int_{\Upgamma} \phi_{down} \, \left( {\bf n} \cdot {\bf u} c \right)_{up} \; d{\Upgamma} + \int_{\Upgamma} \phi_{up} \, \left( {\bf n} \cdot {\bf u} c \right)_{up} \; d{\Upgamma} \right] =
+    \sum_f \left( \phi_{up} + \phi_{down} \right)  \left( {\bf n} \cdot {\bf u} c \right)_{up} \; d{\Upgamma} 
+  \end{dmath}
+  \intertext{In FEniCS +/- is abitrary and normal is oriented to each element. Jump is defined as:}
+  \begin{dmath}
+    \left[\left[\phi \right]\right] = \phi_+ - \phi_-
+  \end{dmath}
+  \intertext{Therefore:}
+  \begin{dmath}
+    \gamma = \frac{1}{2} \left( {\bf n} \cdot {\bf u} + \left| {\bf n} \cdot {\bf u} \right| \right)  
+  \end{dmath}
+  \begin{dmath}
+    \sum_f \left( \phi_{up} + \phi_{down} \right)  \left( {\bf n} \cdot {\bf u} c \right)_{up} \; d{\Upgamma} = \sum_f \int_{\Upgamma} \left[\left[\phi \right]\right] \left( \gamma_+ c_+ - \gamma_- c_- \right)  \; d{\Upgamma}
+  \end{dmath}
+\end{dgroup}
+\begin{dmath}
+  - \sum_e \int_{\Omega} \nabla \phi \left( {\bf u} c \right) \; d{\Omega}
+  + \sum_f \int_{\Upgamma} \left[\left[\phi \right]\right] \left( \gamma_+ c_+ - \gamma_- c_- \right) \; d{\Upgamma} = 0
+\end{dmath}
+
+\section{DG Diffusion:}
+
+\begin{dgroup*}
+\begin{dmath}
+  - \nabla \cdot \left( \bar{\bar{\kappa}} \cdot \nabla c \right) = s
+\end{dmath}
+\intertext{Assume diffusivity is isentropic. Second derivative of DG is unreal so we discretise the derivative first}
+\begin{dmath}
+  - \nabla \cdot \left( \bar{\bar{\kappa}} \cdot {\bf q} \right) = s
+\end{dmath}
+\begin{dmath}
+  - \sum_e \int_{\Omega} \phi \nabla \cdot \left( \kappa {\bf q} \right)  \; d{\Omega}= \int_{\Omega} \phi s \; d{\Omega}
+\end{dmath}
+\begin{dmath}
+  \sum_e \int_{\Omega} \nabla \phi \cdot \left( \kappa {\bf q} \right)  \; d{\Omega} = \sum_e \int_{\Omega} \phi s  \; d{\Omega} + \sum_f \int_{\Upgamma} \phi {\bf n} \cdot \kappa {\bf q} \; d{\Upgamma}
+\end{dmath}
+\begin{dmath}
+  \sum_e \int_{\Omega} \nabla \phi \cdot \left( \kappa {\bf q} \right)  \; d{\Omega} = \sum_e \int_{\Omega} \phi s  \; d{\Omega} + \sum_f \int_{\Upgamma}  \left( \phi_{up} \cdot {\bf n}_{up} + \phi_{down} \cdot {\bf n}_{down} \right)  \left(\kappa {\bf q} \right)_{up} \; d{\Upgamma}
+\end{dmath}
+\end{dgroup*}
+
+\begin{dgroup*}
+\begin{dmath}
+  \nabla c = {\bf q}
+\end{dmath}
+\begin{dmath}
+  \int_{\Omega} {\bf w} \cdot \nabla c  \; d{\Omega} = \int_{\Omega} {\bf w} \cdot {\bf q}  \; d{\Omega}
+\end{dmath}
+\begin{dmath}
+  - \sum_e \int_{\Omega} \nabla \cdot {\bf w} c  \; d{\Omega} = \int_{\Omega} {\bf w} \cdot {\bf q}  \; d{\Omega} - \sum_f \int_{\Upgamma} {\bf w} \cdot {\bf n} \, c \; d{\Upgamma}
+\end{dmath}
+\begin{dmath}
+  \sum_f \int_{\Upgamma} {\bf w} \cdot {\bf n} \, c \; d{\Upgamma} = \sum_f \left[ \int_{\Upgamma} \left( {\bf n} \cdot {\bf w} \right)_{down} \, c_{up} \; d{\Upgamma} + \int_{\Upgamma} \left( {\bf n} \cdot {\bf w} \right)_{up} \, c_{up} \; d{\Upgamma} \right] =
+    \sum_f \int_{\Upgamma} \left( {\bf n}_{up} \cdot {\bf w}_{up} + {\bf n}_{down} \cdot {\bf w}_{down} \right)  c_{up} \; d{\Upgamma} 
+\end{dmath}
+\end{dgroup*}
+
+\begin{dmath}
+   \int_{\Omega} {\bf w} \cdot {\bf q}  \; d{\Omega} = \sum_f \int_{\Upgamma} \left( {\bf n}_{up} \cdot {\bf w}_{up} + {\bf n}_{down} \cdot {\bf w}_{down} \right)  c_{up} \; d{\Upgamma} - \sum_e \int_{\Omega} \nabla \cdot {\bf w} c  \; d{\Omega}
+\end{dmath}
 
 \section{k-$\epsilon$:}
 

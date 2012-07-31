@@ -1,4 +1,4 @@
-from KEpsilon_MMSFunctions import *
+from DG_MMSFunctions import *
 from numpy import *
 import matplotlib
 import matplotlib.pyplot as plt
