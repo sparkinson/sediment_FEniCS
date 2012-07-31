@@ -13,10 +13,11 @@ shape_P = 1
 shape_C = 2 
 picard_tol = 1e-3
 min_dt = 5e-3
-max_dt = 2.5e-2
+max_dt = 8e-2
 nl_its = 1
-dX = 1e-3
+dX = 2e-3
 T = 5.0
+nu_scale_ = 0.3
 
 def Calc_timestep(u, h):
     dt = np.ma.fix_invalid(dX/abs(u.vector().array()))
@@ -40,7 +41,7 @@ set_log_active(print_log)
 nu = Constant(1e-6)
 theta = Constant(1.0)
 kappa = Constant(0.0)
-nu_scale = 0.1
+nu_scale = Constant(nu_scale_)
 
 # save files
 u_file = File("results/u.pvd") 
