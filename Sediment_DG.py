@@ -148,36 +148,63 @@ A3 = assemble(a3)
 # ADVECTION-DIFFUSION
 
 # define equations to be solved   
-F_c = (d*(1./k)*(c - c_1)*dx 
-       + d*inner(u_0_ta, grad(c_ta))*dx
-       + inner(grad(d), kappa*grad(c_ta))*dx 
-       # - inner(d*n, kappa*grad(c))*ds  # zero-flux
-       - d*Af*dx
-       )
+# F_c = (d*(1./k)*(c - c_1)*dx 
+#        + d*inner(u_0_ta, grad(c_ta))*dx
+#        + inner(grad(d), kappa*grad(c_ta))*dx 
+#        # - inner(d*n, kappa*grad(c))*ds  # zero-flux
+#        - d*Af*dx
+#        )
 
-# stabilisation
-vnorm = sqrt(inner(u_0_ta, u_0_ta))
+# # stabilisation
+# vnorm = sqrt(inner(u_0_ta, u_0_ta))
 
-# SU stabilisation
-# beta = 1.0/(atan(Pe) - Pe)
-# Can't calculate using dolfin functions
-# Pe = 0.5*u_0_ta*h/kappa
-# beta.vector().array()[:] = np.sign(u_0.vector().array()) # sign(Pe) (xi with zero diffusion)
-# stab = dot(nu_scale*beta*h, grad(d))*inner(u_0_ta, grad(c_ta))*dx
-stab = nu_scale*h/vnorm*inner(u_0_ta, grad(d))*inner(u_0_ta, grad(c_ta))*dx
+# # SU stabilisation
+# # beta = 1.0/(atan(Pe) - Pe)
+# # Can't calculate using dolfin functions
+# # Pe = 0.5*u_0_ta*h/kappa
+# # beta.vector().array()[:] = np.sign(u_0.vector().array()) # sign(Pe) (xi with zero diffusion)
+# # stab = dot(nu_scale*beta*h, grad(d))*inner(u_0_ta, grad(c_ta))*dx
+# stab = nu_scale*h/vnorm*inner(u_0_ta, grad(d))*inner(u_0_ta, grad(c_ta))*dx
 
-# SUPG stabilisation
-# r = ((1./k)*(c - c_1) 
-#      + inner(u_0_ta, grad(c_ta))
-#      - div(kappa*grad(c_ta)) 
-#      - Af
-#      ) 
-# p = inner(u_0_ta, grad(d))
-# tau = nu_scale*h/vnorm
-# stab = p*tau*r*dx
+# # SUPG stabilisation
+# # r = ((1./k)*(c - c_1) 
+# #      + inner(u_0_ta, grad(c_ta))
+# #      - div(kappa*grad(c_ta)) 
+# #      - Af
+# #      ) 
+# # p = inner(u_0_ta, grad(d))
+# # tau = nu_scale*h/vnorm
+# # stab = p*tau*r*dx
 
-# Apply stabilistaion
-F_c += stab
+# # Apply stabilistaion
+# F_c += stab
+
+# Penalty term
+alpha = Constant(10.0)
+
+# Mesh-related functions
+n = FacetNormal(mesh)
+h = CellSize(mesh)
+h_avg = (h('+') + h('-'))/2
+
+# ( dot(v, n) + |dot(v, n)| )/2.0
+un = (dot(u_0_ta, n) + abs(dot(u_0_ta, n)))/2.0
+
+# Bilinear form
+a_int = dot(grad(d), kappa*grad(c_ta) - u_0_ta*c_ta)*dx
+
+a_fac = kappa('+')*(alpha('+')/h('+'))*dot(jump(d, n), jump(c_ta, n))*dS \
+      - kappa('+')*dot(avg(grad(d)), jump(c_ta, n))*dS \
+      - kappa('+')*dot(jump(d, n), avg(grad(c_ta)))*dS
+
+a_vel = dot(jump(d), un('+')*c_ta('+') - un('-')*c_ta('-') )*dS  + dot(d, un*c_ta)*ds
+
+F_c = d*(1./k)*(c - c_1)*dx + a_int + a_fac + a_vel
+
+# Linear form
+L = d*Af*dx
+
+F_c = F_c - L
 
 # seperate bilinear and linear forms of equations and preassemble bilinear form
 a4 = lhs(F_c)
