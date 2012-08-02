@@ -11,13 +11,13 @@ dt_store = 0.1
 shape_U = 2
 shape_P = 1
 shape_C = 2 
-picard_tol = 1e-3
+picard_tol = 1e-7
 min_dt = 5e-3
-max_dt = 8e-2
-nl_its = 1
-dX = 2e-3
-T = 5.0
-nu_scale_ = 0.3
+max_dt = 1e-1
+nl_its = 3
+dX = 2.5e-2
+T = 15.0
+nu_scale_ = 0.5
 
 def Calc_timestep(u, h):
     dt = np.ma.fix_invalid(dX/abs(u.vector().array()))
@@ -50,8 +50,9 @@ c_file = File("results/c.pvd")
 
 # generate expressions for initial conditions, boundary conditions and source terms
 u_s = Expression(('0.0', '0.0'), degree = shape_U + 1)
-p_s = Expression('-floor(1.2 - x[0])*(0.02*9.81)*(x[1]-0.2)', degree = shape_P + 1)
-c_s = Expression('floor(1.2 - x[0])*0.02', degree = shape_C + 1)
+# p_s = Expression('-floor(1.2 - x[0])*(0.02*9.81)*(x[1]-0.2)', degree = shape_P + 1)
+p_s = Expression('0.0', degree = shape_P + 1)
+c_s = Expression('floor(1.2 - x[0])*0.007737', degree = shape_C + 1)
 Mf = Expression(('0.0', '0.0'), degree = shape_U + 1)
 Af = Expression('0.0', degree = shape_C + 1)
 
@@ -123,7 +124,7 @@ F = (((1./k)*inner(v, u - u_1)
      + p_nl*inner(v, n)*ds
      )
 # pressure equation
-P = ((inner(grad(p - p_nl), grad(q)) - 
+P = ((k*inner(grad(p - p_nl), grad(q)) - 
       inner(u_0, grad(q))
       )*dx 
      #+ q*inner(u_0, n)*ds # zero normal flow
@@ -131,7 +132,7 @@ P = ((inner(grad(p - p_nl), grad(q)) -
 # velocity correction
 F_2 = (inner(u, v) - 
        inner(u_0, v) +
-       inner(grad(p_0 - p_nl), v)
+       k*inner(grad(p_0 - p_nl), v)
        )*dx
 # seperate bilinear and linear forms of equations and preassemble bilinear form
 a1 = lhs(F)
@@ -186,8 +187,11 @@ L4 = rhs(F_c)
 # define dirichlet boundary conditions
 
 free_slip = Expression('0.0', degree = shape_U + 1)
-bcu  = [DirichletBC(V.sub(0), free_slip, "on_boundary && (near(x[1], 0.0) || near(x[1], 0.4))"), 
-        DirichletBC(V.sub(1), free_slip, "on_boundary && (near(x[0], 0.0) || near(x[0], 1.0))")]
+no_slip = Expression(('0.0', '0.0'), degree = shape_U + 1)
+# bcu  = [DirichletBC(V.sub(1), free_slip, "on_boundary && (near(x[1], 0.0) || near(x[1], 0.4))"), 
+#         DirichletBC(V.sub(0), free_slip, "on_boundary && (near(x[0], 0.0) || near(x[0], 1.0))")]
+bcu  = [DirichletBC(V, no_slip, "on_boundary && !(near(x[1], 0.4))"), 
+        DirichletBC(V.sub(1), free_slip, "on_boundary && near(x[1], 0.4)")]
 bcp = []
 bcc  = []
 
