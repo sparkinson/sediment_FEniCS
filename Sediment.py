@@ -5,34 +5,36 @@ import Sediment_MMSFunctions as mms
 parameters["std_out_all_processes"] = False;
 parameters["form_compiler"]["cpp_optimize"] = True
 parameters["form_compiler"]["quadrature_degree"] = 4
+# parameters["num_threads"] = 1;
 
 # simulation parameters
-dt_store = 0.05
-shape_U = 2
+dt_store = 0.1
+shape_U = 1
 shape_P = 1
 shape_C = 1 
-picard_tol = 1e-4
-min_dt = 5e-4
-max_dt = 5e-3
+picard_tol = 1e-3
+CFL = 0.2
+min_dt = 5e-3
+max_dt = 1e-1
 nl_its = 2
-dX = 25e-3
-T = 15.0
-nu_scale_ = 0.5
+dX = 2.5e-2
+T = 130.0
+nu_scale_ = 0.25
+beta_ = 4./2.
+L = 5.7
 
 def Calc_timestep(u, h):
     dt = np.ma.fix_invalid(0.5*dX/abs(u.vector().array()))
-    dt = dt.min()
-    print dt
+    dt = CFL*dt.min()
     dt = max(dt, min_dt)
     dt = min(dt, max_dt)
-    print dt
     return dt
 
-dt = max_dt
+dt = min_dt
 
 # show information
 print_t = True
-print_log = True
+print_log = False
 info(parameters, False)
 set_log_active(print_log)
 
@@ -41,6 +43,9 @@ nu = Constant(1e-6)
 theta = Constant(0.5)
 kappa = Constant(0.0)
 nu_scale = Constant(nu_scale_)
+beta = Constant(beta_)
+g = Constant(9.81)
+u_sink = Constant(5.5e-4)
 
 # save files
 u_file = File("results/u.pvd") 
@@ -49,19 +54,25 @@ c_file = File("results/c.pvd")
 
 # generate expressions for initial conditions, boundary conditions and source terms
 u_s = Expression(('0.0', '0.0'), degree = shape_U + 1)
-# p_s = Expression('0.0', degree = shape_P + 1)
-p_s = Expression('-floor(1.2 - x[0])*(0.02*9.81)*(x[1]-0.2)', degree = shape_P + 1)
-c_s = Expression('floor(1.2 - x[0])*0.007737', degree = shape_C + 1)
+p_s = Expression('0.0', degree = shape_P + 1)
 Mf = Expression(('0.0', '0.0'), degree = shape_U + 1)
 Af = Expression('0.0', degree = shape_C + 1)
 
+class sediment_initial(Expression):
+    def eval(self, value, x):
+        if x[0] < 0.2:
+            value[0] = 0.007737
+        else:
+            value[0] = 0.0
+c_s = sediment_initial()
+
 # define gravity
-g_s = Expression(('0.0', '-9.81'), degree = shape_U + 1)
+g_vector_s = Expression(('0.0', '-1.0'), degree = shape_U + 1)
 
 ############################################################
 # generate geometry
 
-mesh = Rectangle(0.,0.,1.0,0.4,int(1.0/dX),int(0.4/dX),'right')
+mesh = Rectangle(0.,0.,L,0.4,int(L/dX),int(0.4/dX),'right')
 n = FacetNormal(mesh)
 h = CellSize(mesh)
 
@@ -81,7 +92,7 @@ u_1 = project(u_s, V)
 p_0 = project(p_s, Q)
 p_star = project(p_s, Q)
 p_1 = project(p_s, Q)
-g = project(g_s, V)
+g_vector = project(g_vector_s, V)
 
 # ADVECTION
 D = FunctionSpace(mesh, "CG", shape_C)
@@ -89,89 +100,15 @@ c = TrialFunction(D)
 d = TestFunction(D) 
 c_0 = interpolate(c_s, D)
 c_1 = interpolate(c_s, D)
-beta = Function(V)
 
 ############################################################
-# define equations to be solved
-k = Constant(dt)
+# pressure reference node
 
-# time-averaged values
-u_ta = theta*u+(1.0-theta)*u_1
-c_ta = theta*c+(1.0-theta)*c_1
-u_0_ta = theta*u_0+(1.0-theta)*u_1
-c_0_ta = theta*c_0+(1.0-theta)*c_1
-# non-linear variables
-u_nl = theta*u_star+(1.0-theta)*u_1
-p_nl = p_star
-
-# MOMENTUM & CONSERVATION
-
-# # pressure guess
-# a = inner(v, grad(p))*dx 
-# L = inner(v, g*c_0)*dx
-# solve(a == L, p_0)
-# p_1.assign(p_0)
-
-# momentum equation
-F = (((1./k)*inner(v, u - u_1)
-      + inner(grad(u_nl)*u_ta, v)
-      + nu*inner(grad(u_ta), grad(v))
-      - inner(v, Mf)
-      - div(v)*p_nl
-      - inner(v, g*c_0_ta)
-      )*dx
-     + p_nl*inner(v, n)*ds
-     )
-# SU stabilisation
-# vnorm = sqrt(inner(u_0_ta, u_0_ta))
-# stab_F = nu_scale*h/vnorm*inner(u_0_ta, grad(v))*inner(u_0_ta, grad(u_ta))*dx
-# F += stab_F
-# pressure equation
-P = ((k*inner(grad(p - p_nl), grad(q)) - 
-      inner(u_0, grad(q))
-      )*dx 
-     #+ q*inner(u_0, n)*ds # zero normal flow
-     )
-beta = 1.0
-stab_P = beta*h**2*inner(grad(p), grad(q))*dx
-P += stab_P
-# velocity correction
-F_2 = (inner(u, v) - 
-       inner(u_0, v) +
-       k*inner(grad(p_0 - p_nl), v)
-       )*dx
-# seperate bilinear and linear forms of equations and preassemble bilinear form
-a1 = lhs(F)
-L1 = rhs(F)
-a2 = lhs(P)
-L2 = rhs(P)
-a3 = lhs(F_2)
-L3 = rhs(F_2)
-# A1 = assemble(a1)
-# A2 = assemble(a2)
-# A3 = assemble(a3) 
-
-# ADVECTION-DIFFUSION
-
-# define equations to be solved   
-F_c = (d*(1./k)*(c - c_1)*dx 
-       + d*inner(u_0_ta, grad(c_ta))*dx
-       + inner(grad(d), kappa*grad(c_ta))*dx 
-       # - inner(d*n, kappa*grad(c))*ds  # zero-flux
-       - d*Af*dx
-       )
-
-# stabilisation
-vnorm = sqrt(inner(u_0_ta, u_0_ta))
-# stab_F_c = nu_scale*h/(vnorm**2)*inner(u_0_ta, grad(d))*inner(u_0_ta, grad(c_ta))*dx
-stab_F_c = nu_scale*h/vnorm*inner(u_0_ta, grad(d))*inner(u_0_ta, grad(c_ta))*dx
-
-# Apply stabilistaion
-F_c += stab_F_c
-
-# seperate bilinear and linear forms of equations and preassemble bilinear form
-a4 = lhs(F_c)
-L4 = rhs(F_c)
+coor = mesh.coordinates()
+p_fix = 0
+for i in range(mesh.num_vertices()):
+    if coor[i][0] - L < DOLFIN_EPS and coor[i][1] - 0.4 < DOLFIN_EPS:
+        p_fix = i
 
 ############################################################
 # define dirichlet boundary conditions
@@ -198,6 +135,76 @@ t_store = dt_store
 # time-loop
 t = dt
 while t < T:
+
+    ############################################################
+    # define equations to be solved
+    k = Constant(dt)
+
+    # time-averaged values
+    u_ta = theta*u+(1.0-theta)*u_1
+    c_ta = theta*c+(1.0-theta)*c_1
+    u_0_ta = theta*u_0+(1.0-theta)*u_1
+    c_0_ta = theta*c_0+(1.0-theta)*c_1
+    # non-linear variables
+    u_nl = theta*u_star+(1.0-theta)*u_1
+    p_nl = p_star
+
+    # MOMENTUM & CONSERVATION
+
+    # momentum equation
+    F = (((1./k)*inner(v, u - u_1)
+          + inner(grad(u_nl)*u_ta, v)
+          + nu*inner(grad(u_ta), grad(v))
+          - inner(v, Mf)
+          - div(v)*p_nl
+          - inner(v, g*g_vector*c_0_ta)
+          )*dx
+         + p_nl*inner(v, n)*ds
+         )
+    # SU stabilisation
+    # vnorm = sqrt(inner(u_0_ta, u_0_ta))
+    # stab_F = nu_scale*h/vnorm*inner(u_0_ta, grad(v))*inner(u_0_ta, grad(u_ta))*dx
+    # F += stab_F
+    # pressure equation
+    P = ((k*inner(grad(p - p_nl), grad(q)) - 
+          inner(u_0, grad(q))
+          )*dx 
+         #+ q*inner(u_0, n)*ds # zero normal flow
+         )
+    stab_P = beta*h**2*inner(grad(p), grad(q))*dx
+    P += stab_P
+    # velocity correction
+    F_2 = (inner(u, v) - 
+           inner(u_0, v) +
+           k*inner(grad(p_0 - p_nl), v)
+           )*dx
+    # seperate bilinear and linear forms of equations and preassemble bilinear form
+    a1 = lhs(F)
+    L1 = rhs(F)
+    a2 = lhs(P)
+    L2 = rhs(P)
+    a3 = lhs(F_2)
+    L3 = rhs(F_2)
+
+    # ADVECTION-DIFFUSION
+
+    # define equations to be solved   
+    F_c = (d*(1./k)*(c - c_1)*dx 
+           + d*inner(u_0_ta - u_sink*g_vector, grad(c_ta))*dx
+           + inner(grad(d), kappa*grad(c_ta))*dx 
+           # - inner(d*n, kappa*grad(c))*ds  # zero-flux
+           - d*Af*dx
+           )
+
+    # stabilisation
+    # vnorm = norm(u_1) + 1e-7*e**-(norm(u_1)*1.0e5)
+    vnorm = sqrt(inner(u_0_ta, u_0_ta) + 1e-7*e**-(inner(u_0_ta, u_0_ta)*1.0e5))
+    stab_F_c = nu_scale*h/vnorm*inner(u_0_ta, grad(d))*inner(u_0_ta, grad(c_ta))*dx
+    F_c += stab_F_c
+
+    # seperate bilinear and linear forms of equations and preassemble bilinear form
+    a4 = lhs(F_c)
+    L4 = rhs(F_c)
 
     nl_it = 0
     while nl_it < nl_its:
@@ -244,6 +251,8 @@ while t < T:
             u_star.assign(u_0)
             p_star.assign(p_0)
 
+            p_0.vector()[:] = p_0.vector().array() - p_0.vector().array()[p_fix]
+
         # ADVECTION-DIFFUSION
 
         if print_log:
@@ -256,9 +265,6 @@ while t < T:
         nl_it += 1
 
     if t > t_store:
-        if print_t:
-            print t
-
         # Save to file
         u_file << u_0
         p_file << p_0
@@ -271,8 +277,7 @@ while t < T:
     p_1.assign(p_0)
     c_1.assign(c_0)
 
-    # dt = Calc_timestep(u_0, h)
-    # k = Constant(dt)
+    dt = Calc_timestep(u_0, h)
 
     t += dt
-    print t
+    print t, dt
