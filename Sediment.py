@@ -18,10 +18,10 @@ min_dt = 5e-3
 max_dt = 1e-1
 nl_its = 2
 dX = 2.5e-2
-T = 130.0
+T = 5.0
 nu_scale_ = 0.25
 beta_ = 4./2.
-L = 5.7
+L = 1.0
 
 def Calc_timestep(u, h):
     dt = np.ma.fix_invalid(0.5*dX/abs(u.vector().array()))
@@ -48,9 +48,9 @@ g = Constant(9.81)
 u_sink = Constant(5.5e-4)
 
 # save files
-u_file = File("results/u.pvd") 
-p_file = File("results/p.pvd") 
-c_file = File("results/c.pvd")
+u_file = File("results/u_con.pvd") 
+p_file = File("results/p_con.pvd") 
+c_file = File("results/c_con.pvd")
 
 # generate expressions for initial conditions, boundary conditions and source terms
 u_s = Expression(('0.0', '0.0'), degree = shape_U + 1)
@@ -190,7 +190,8 @@ while t < T:
 
     # define equations to be solved   
     F_c = (d*(1./k)*(c - c_1)*dx 
-           + d*inner(u_0_ta - u_sink*g_vector, grad(c_ta))*dx
+           # + d*inner(u_0_ta - u_sink*g_vector, grad(c_ta))*dx         # advective form
+           + d*div((u_0_ta - u_sink*g_vector)*c_ta)*dx                # conservative form
            + inner(grad(d), kappa*grad(c_ta))*dx 
            # - inner(d*n, kappa*grad(c))*ds  # zero-flux
            - d*Af*dx
