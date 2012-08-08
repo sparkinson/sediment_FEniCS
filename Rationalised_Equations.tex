@@ -1,0 +1,105 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{dsfont}
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{pdflscape}
+\usepackage{float}
+\usepackage{natbib}
+\usepackage{amsmath}
+\usepackage[top=2cm,bottom=2cm,left=2.2cm,right=2.2cm]{geometry}
+\usepackage{setspace}
+\usepackage{indentfirst}
+\usepackage[font=small,format=plain,labelfont=bf,up,%% textfont=it
+  ,up]{caption}
+\usepackage{tikz}
+\usetikzlibrary{calc,3d}
+\setlength{\parindent}{10pt}
+\setlength{\parskip}{7pt}
+\usepackage{upgreek}
+\usepackage{breqn}
+\setlength{\belowdisplayskip}{6pt plus 2pt minus 1pt}
+\setlength{\belowdisplayshortskip}{6pt plus 1pt minus 1pt}
+\setlength{\abovedisplayskip}{6pt plus 2pt minus 1pt}
+\setlength{\abovedisplayshortskip}{6pt plus 1pt minus 1pt}
+\bibliographystyle{plainnat}
+\title{}
+\author{Samuel Parkinson}
+\date{\today}
+
+\begin{document}
+
+\subsection{Incremental pressure correction (IPCS):}
+
+\begin{dmath}
+  {\bf u}^{n-\theta} = \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}^{n}
+\end{dmath}
+\begin{dmath}
+  {\bf u}^{n-\theta nl} = \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_*
+\end{dmath}
+
+Tentative velocity step:
+\begin{dmath}
+  \int_\Omega {\bf v} \frac{{\bf u}_* - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \left( {\bf u}^{n-\theta} \right) \cdot \nabla {\bf u}^{n-\theta nl} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u}^{n-\theta} \; d\Omega - \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \nabla p_* \; d\Omega \\ - \int_\Upgamma {\bf v} g \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
+\end{dmath}
+
+Pressure equation:
+\begin{dmath}
+  \int_\Omega \nabla q \cdot {\bf u}_* \; d\Omega - \int_\Upgamma q \left( {\bf u}_{n} \cdot n \right) \; d\Upgamma = \Delta t \int_\Omega \nabla q \cdot \nabla \left(p - p_* \right) \; d\Omega  \condition{$\forall q$}
+\end{dmath}
+
+Corrected velocity:
+\begin{dmath}
+  \int_\Omega {\bf v} \cdot \frac{{\bf u}_n - {\bf u}_*}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla \left(p - p_* \right) \; d\Omega = 0 \condition{$\forall {\bf v}$}
+\end{dmath}
+
+\subsection{Avoiding Assembly:}
+
+Tentative velocity step:
+\begin{dmath}
+  \int_\Omega {\bf v} \cdot \frac{{\bf u}_* - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_* \right) \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) \; d\Omega + \int_\Omega \nabla {\bf v} \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_* \right) \; d\Omega - \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla p_* \; d\Omega \\ - \int_\Upgamma {\bf v} \cdot g \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
+\end{dmath}
+\begin{dmath}
+  \int_\Omega {\bf v} \cdot \frac{{\bf u}_*}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \left(1 - \theta \right) {\bf u}_* \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) \; d\Omega + \int_\Omega \nabla {\bf v} \cdot \nabla \left(1 - \theta \right) {\bf u}_* \; d\Omega = \int_\Omega {\bf v} \cdot \frac{{\bf u}_{n-1}}{\Delta t} \; d\Omega - \int_\Omega {\bf v} \cdot \theta {\bf u}^{n-1} \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) \; d\Omega - \int_\Omega \nabla {\bf v} \cdot \nabla \theta {\bf u}^{n-1} \; d\Omega + \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega - \int_\Omega {\bf v} \cdot \nabla p_* \; d\Omega \\ + \int_\Upgamma {\bf v} \cdot g \; d\Upgamma \condition{$\forall {\bf v}$}
+\end{dmath}
+\begin{dmath}
+  \int_\Omega {\bf v} \cdot \frac{{\bf u}_*}{\Delta t} \; d\Omega + \left(1 - \theta \right) \int_\Omega \left [ {\bf v} \cdot {\bf u}_* \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) + \nabla {\bf v} \cdot \nabla {\bf u}_* \right] \; d\Omega = \int_\Omega {\bf v} \cdot \frac{{\bf u}_{n-1}}{\Delta t} \; d\Omega - \theta \int_\Omega \left[ {\bf v} \cdot {\bf u}^{n-1} \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) + \nabla {\bf v} \cdot \nabla {\bf u}^{n-1} \right] \; d\Omega + \int_\Omega {\bf v} \cdot {\bf f} \; d\Omega - \int_\Omega {\bf v} \cdot \nabla p_* \; d\Omega \\ + \int_\Upgamma {\bf v} \cdot g \; d\Upgamma \condition{$\forall {\bf v}$}
+\end{dmath}
+\begin{dmath}
+  {\bf u}_* = \phi_i {\bf U}_*
+\end{dmath}
+\begin{dmath}
+  {\bf u}^{n-1} = \phi_i {\bf U}^{n-1}
+\end{dmath}
+\begin{dmath}
+  {\bf v} = \phi_j
+\end{dmath}
+\begin{dmath}
+  \int_\Omega \phi_j \cdot \frac{\phi_i {\bf U}_*}{\Delta t} \; d\Omega + \left(1 - \theta \right) \int_\Omega \left [ \phi_j \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) \phi_i {\bf U}_* + \nabla \phi_j \cdot \nabla \phi_i {\bf U}_* \right] \; d\Omega = \int_\Omega \phi_j \cdot \frac{\phi_i {\bf U}^{n-1}}{\Delta t} \; d\Omega - \theta \int_\Omega \left[ \phi_j \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) \phi_i {\bf U}^{n-1} + \nabla \phi_j \cdot \nabla \phi_i {\bf U}^{n-1} \right] \; d\Omega + \int_\Omega \phi_j \cdot {\bf f} \; d\Omega - \int_\Omega \phi_j \cdot \nabla p_* \; d\Omega \\ + \int_\Upgamma \phi_j \cdot g \; d\Upgamma \condition{$\forall \phi_j$}
+\end{dmath}
+\begin{dmath}
+  \int_\Omega \frac{\phi_j \cdot \phi_i}{\Delta t}{\bf U}_* \; d\Omega + \left(1 - \theta \right) \int_\Omega \left [ \phi_j \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) \phi_i + \nabla \phi_j \cdot \nabla \phi_i \right] {\bf U}_* \; d\Omega = \int_\Omega \frac{\phi_j \cdot \phi_i}{\Delta t} {\bf U}^{n-1} \; d\Omega - \theta \int_\Omega \left[ \phi_j \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) \phi_i + \nabla \phi_j \cdot \nabla \phi_i \right] {\bf U}^{n-1} \; d\Omega + \int_\Omega \phi_j \cdot {\bf f} \; d\Omega - \int_\Omega \phi_j \cdot \nabla p_* \; d\Omega \\ + \int_\Upgamma \phi_j \cdot g \; d\Upgamma \condition{$\forall \phi_j$}
+\end{dmath}
+\begin{dmath}
+  \int_\Omega \left [ \frac{\phi_j \cdot \phi_i}{\Delta t} + \left(1 - \theta \right) \nabla \phi_j \cdot \nabla \phi_i \right] {\bf U}_* \; d\Omega + \int_\Omega \left(1 - \theta \right) \phi_j \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) \phi_i {\bf U}_* \; d\Omega = \int_\Omega \left [ \frac{\phi_j \cdot \phi_i}{\Delta t} - \theta \; \nabla \phi_j \cdot \nabla \phi_i \right] {\bf U}^{n-1} \; d\Omega - \int_\Omega \theta \; \phi_j \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) \phi_i {\bf U}^{n-1} \; d\Omega + \int_\Omega \phi_j \cdot {\bf f} \; d\Omega - \int_\Omega \phi_j \cdot \nabla p_* \; d\Omega \\ + \int_\Upgamma \phi_j \cdot g \; d\Upgamma \condition{$\forall \phi_j$}
+\end{dmath}
+\begin{dmath}
+  M = \phi_j \cdot \phi_i 
+\end{dmath}
+\begin{dmath}
+  K = \nabla \phi_j \cdot \nabla \phi_i
+\end{dmath}
+\begin{dmath}
+  A = \phi_j \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) \phi_i
+\end{dmath}
+\begin{dmath}
+  \int_\Omega \left [ \frac{M}{\Delta t} + \left(1 - \theta \right) K \right] {\bf U}_* \; d\Omega + \int_\Omega \left(1 - \theta \right) A {\bf U}_* \; d\Omega = \int_\Omega \left [ \frac{M}{\Delta t} - \theta \; K \right] {\bf U}^{n-1} \; d\Omega - \int_\Omega \theta \; A {\bf U}^{n-1} \; d\Omega + \int_\Omega \phi_j \cdot {\bf f} \; d\Omega - \int_\Omega \phi_j \cdot \nabla p_* \; d\Omega \\ + \int_\Upgamma \phi_j \cdot g \; d\Upgamma \condition{$\forall \phi_j$}
+\end{dmath}
+
+no forcing and full dirichlet conditions
+
+
+\begin{dmath}
+  \int_\Omega \left [ \frac{M}{\Delta t} + \left(1 - \theta \right) K + \left(1 - \theta \right) A \right] {\bf U}_* \; d\Omega = \int_\Omega \left [ \frac{M}{\Delta t} - \theta \; K - \theta \; A \right] {\bf U}^{n-1} \; d\Omega - \int_\Omega \phi_j \cdot \nabla p_* \; d\Omega \condition{$\forall \phi_j$}
+\end{dmath}
+
+\end{document}

@@ -149,13 +149,12 @@ while t < T:
     k = Constant(dt)
 
     # time-averaged values
-    u_ta = theta*u+(1.0-theta)*u_1
-    c_ta = theta*c+(1.0-theta)*c_1
-    u_0_ta = theta*u_0+(1.0-theta)*u_1
-    c_0_ta = theta*c_0+(1.0-theta)*c_1
+    u_ta = theta*u_1+(1.0-theta)*u
+    c_ta = theta*c_1+(1.0-theta)*c
+    u_0_ta = theta*u_1+(1.0-theta)*u_0
+    c_0_ta = theta*c_1+(1.0-theta)*c_0
     # non-linear variables
-    u_nl = theta*u_star+(1.0-theta)*u_1
-    p_nl = p_star
+    u_nl = theta*u_1+(1.0-theta)*u_star
 
     # MOMENTUM & CONSERVATION
 
@@ -164,17 +163,17 @@ while t < T:
           + inner(grad(u_nl)*u_ta, v)
           + nu*inner(grad(u_ta), grad(v))
           - inner(v, Mf)
-          - div(v)*p_nl
+          - div(v)*p_star
           - inner(v, g*g_vector*c_0_ta*R)
           )*dx
-         + p_nl*inner(v, n)*ds
+         + p_star*inner(v, n)*ds
          )
     # SU stabilisation
     # vnorm = sqrt(inner(u_0_ta, u_0_ta))
     # stab_F = nu_scale*h/vnorm*inner(u_0_ta, grad(v))*inner(u_0_ta, grad(u_ta))*dx
     # F += stab_F
     # pressure equation
-    P = ((k*inner(grad(p - p_nl), grad(q)) - 
+    P = ((k*inner(grad(p - p_star), grad(q)) - 
           inner(u_0, grad(q))
           )*dx 
          #+ q*inner(u_0, n)*ds # zero normal flow
@@ -184,7 +183,7 @@ while t < T:
     # velocity correction
     F_2 = (inner(u, v) - 
            inner(u_0, v) +
-           k*inner(grad(p_0 - p_nl), v)
+           k*inner(grad(p_0 - p_star), v)
            )*dx
     # seperate bilinear and linear forms of equations and preassemble bilinear form
     a1 = lhs(F)
@@ -214,8 +213,6 @@ while t < T:
     # R_p = 0.5829 # (R*g*d**3)**0.5/nu
     Z = inner(tau_b, tau_b)/u_sink*0.7234  # R_p**0.6
     A = Constant(1.3e-7)
-    # # En = A*Z**5
-    # # bl_en = c_d_0/(En + 1e-7*e**-(En*1.0e5))
     en = u_sink*( A*Z**5.0/(1 + A*Z**5.0/0.3) )
 
     En = assemble(en*ds)
