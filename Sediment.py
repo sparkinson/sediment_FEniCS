@@ -8,20 +8,23 @@ parameters["form_compiler"]["quadrature_degree"] = 4
 # parameters["num_threads"] = 1;
 
 # simulation parameters
-dt_store = 0.1
-shape_U = 1
+dt_store = 1e-10
+shape_U = 2
 shape_P = 1
 shape_C = 1 
-picard_tol = 1e-3
-CFL = 0.2
-min_dt = 5e-3
+picard_tol = 1e-5
+CFL = 0.05
+min_dt = 1e-4
 max_dt = 1e-1
 nl_its = 2
 dX = 2.5e-2
-T = 5.0
-nu_scale_ = 0.25
+T = 20.0
+nu_scale_ = 0.20
 beta_ = 4./2.
-L = 1.0
+L = 2.0
+R = 2.217
+d = 25e-6
+conc = 3.49e-03
 
 def Calc_timestep(u, h):
     dt = np.ma.fix_invalid(0.5*dX/abs(u.vector().array()))
@@ -48,9 +51,10 @@ g = Constant(9.81)
 u_sink = Constant(5.5e-4)
 
 # save files
-u_file = File("results/u_con.pvd") 
-p_file = File("results/p_con.pvd") 
-c_file = File("results/c_con.pvd")
+u_file = File("results/u_a.pvd") 
+p_file = File("results/p_a.pvd") 
+c_file = File("results/c_a.pvd")
+c_d_file = File("results/c_d_a.pvd")
 
 # generate expressions for initial conditions, boundary conditions and source terms
 u_s = Expression(('0.0', '0.0'), degree = shape_U + 1)
@@ -61,7 +65,7 @@ Af = Expression('0.0', degree = shape_C + 1)
 class sediment_initial(Expression):
     def eval(self, value, x):
         if x[0] < 0.2:
-            value[0] = 0.007737
+            value[0] = conc #0.007737
         else:
             value[0] = 0.0
 c_s = sediment_initial()
@@ -100,6 +104,10 @@ c = TrialFunction(D)
 d = TestFunction(D) 
 c_0 = interpolate(c_s, D)
 c_1 = interpolate(c_s, D)
+
+# SEDIMENT BEDLOAD
+c_d_0 = Function(D)
+c_d_1 = Function(D)
 
 ############################################################
 # pressure reference node
@@ -157,7 +165,7 @@ while t < T:
           + nu*inner(grad(u_ta), grad(v))
           - inner(v, Mf)
           - div(v)*p_nl
-          - inner(v, g*g_vector*c_0_ta)
+          - inner(v, g*g_vector*c_0_ta*R)
           )*dx
          + p_nl*inner(v, n)*ds
          )
@@ -171,8 +179,8 @@ while t < T:
           )*dx 
          #+ q*inner(u_0, n)*ds # zero normal flow
          )
-    stab_P = beta*h**2*inner(grad(p), grad(q))*dx
-    P += stab_P
+    # stab_P = beta*h**2*inner(grad(p), grad(q))*dx
+    # P += stab_P
     # velocity correction
     F_2 = (inner(u, v) - 
            inner(u_0, v) +
@@ -188,14 +196,36 @@ while t < T:
 
     # ADVECTION-DIFFUSION
 
-    # define equations to be solved   
+    # define equations to be solved 
+    u_sink_n_up = (inner(u_sink*g_vector, n) + abs(inner(u_sink*g_vector, n)))/2.0  
     F_c = (d*(1./k)*(c - c_1)*dx 
-           # + d*inner(u_0_ta - u_sink*g_vector, grad(c_ta))*dx         # advective form
-           + d*div((u_0_ta - u_sink*g_vector)*c_ta)*dx                # conservative form
+           # + d*inner(u_0_ta, grad(c_ta))*dx         # advective form - no sinking velocity
+           + d*div(u_0_ta*c_ta)*dx                # conservative form - no sinking velocity
+           # + d*inner(u_sink*g_vector, grad(c_ta))*dx # advective form - sinking vel only
+           + inner(grad(d), - u_sink*g_vector*c_ta)*dx # conservative form integrated by parts - sinking vel only
+           + d*u_sink_n_up*c_ta*ds # deposition of sediment (conservative form integrated by parts only)
            + inner(grad(d), kappa*grad(c_ta))*dx 
            # - inner(d*n, kappa*grad(c))*ds  # zero-flux
            - d*Af*dx
            )
+
+    # reentrainment
+    tau_b = abs(nu*grad(u_0_ta)*n)
+    # R_p = 0.5829 # (R*g*d**3)**0.5/nu
+    Z = inner(tau_b, tau_b)/u_sink*0.7234  # R_p**0.6
+    A = Constant(1.3e-7)
+    # # En = A*Z**5
+    # # bl_en = c_d_0/(En + 1e-7*e**-(En*1.0e5))
+    en = u_sink*( A*Z**5.0/(1 + A*Z**5.0/0.3) )
+
+    En = assemble(en*ds)
+    print "Integral of entrainment rate = %.2e" % En
+
+    # energy = 0.5*inner(grad(u_0_ta), grad(u_0_ta))*dx
+    # E = assemble(energy)
+    # print E
+
+    F_c -= d*en*ds
 
     # stabilisation
     # vnorm = norm(u_1) + 1e-7*e**-(norm(u_1)*1.0e5)
@@ -206,6 +236,11 @@ while t < T:
     # seperate bilinear and linear forms of equations and preassemble bilinear form
     a4 = lhs(F_c)
     L4 = rhs(F_c)
+
+    # DEPOSITION
+
+    u_sink_n_up = (inner(u_sink*g_vector, n) + abs(inner(u_sink*g_vector, n)))/2.0
+    D = d*(c_d_0 - c_d_1)*dx - k*d*u_sink_n_up*c_0_ta*ds
 
     nl_it = 0
     while nl_it < nl_its:
@@ -218,41 +253,36 @@ while t < T:
         # Iterate until solution is converged
         Eu = 1e6
         Ep = 1e6
-        while (Eu > picard_tol or Ep > picard_tol):
+        picard_it = 0
+        while (Eu > picard_tol):
             # Compute tentative velocity step
             if print_log:
                 print 'Computing tentative velocity step'
-            # A1 = assemble(a1)
-            # b1 = assemble(L1)
-            # [bc.apply(A1, b1) for bc in bcu]
-            # solve(A1, u_0.vector(), b1, "gmres", "default")
             solve(a1 == L1, u_0, bcu)
 
             # Pressure correction
             if print_log:
                 print 'Computing pressure correction'
-            # A2 = assemble(a2)
-            # b2 = assemble(L2)
-            # [bc.apply(A2, b2) for bc in bcp]
-            # solve(A2, p_0.vector(), b2, "gmres", "default")
             solve(a2 == L2, p_0, bcp)
 
             # Velocity correction
             if print_log:
                 print 'Computing velocity correction'
-            # A3 = assemble(a3)
-            # b3 = assemble(L3)
-            # [bc.apply(A3, b3) for bc in bcu]
-            # solve(A3, u_0.vector(), b3, "gmres", "default")
             solve(a3 == L3, u_0, bcu)
 
             Eu = errornorm(u_0, u_star, norm_type="L2", degree=shape_U + 1)
-            Ep = errornorm(p_0, p_star, norm_type="L2", degree=shape_P + 1)
 
             u_star.assign(u_0)
             p_star.assign(p_0)
 
-            p_0.vector()[:] = p_0.vector().array() - p_0.vector().array()[p_fix]
+            picard_it += 1
+
+            if picard_it > 10:
+                print picard_it
+            if picard_it - picard_it/10*10 > 10:
+                print "struggling to converge velocity field. Error=%.2e" % Eu
+
+            # p_0.vector()[:] = p_0.vector().array() - p_0.vector().array()[p_fix]
 
         # ADVECTION-DIFFUSION
 
@@ -263,13 +293,22 @@ while t < T:
         [bc.apply(A4, b4) for bc in bcc]
         solve(A4, c_0.vector(), b4, "gmres", "default")
 
+        # DEPOSITED SEDIMENT
+        solve(D == 0, c_d_0)
+
         nl_it += 1
+
+    # u_file << u_0
+    # p_file << p_0
+    # c_file << c_0
+    # c_d_file << c_d_0
 
     if t > t_store:
         # Save to file
         u_file << u_0
         p_file << p_0
         c_file << c_0
+        c_d_file << c_d_0
 
         t_store += dt_store
 
@@ -277,8 +316,9 @@ while t < T:
     u_1.assign(u_0)
     p_1.assign(p_0)
     c_1.assign(c_0)
+    c_d_1.assign(c_d_0)
 
     dt = Calc_timestep(u_0, h)
 
     t += dt
-    print t, dt
+    print "t=%.5f, dt=%.2e, picard iterations=%d" % (t, dt, picard_it)
