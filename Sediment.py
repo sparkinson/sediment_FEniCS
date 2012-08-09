@@ -224,7 +224,7 @@ while t < T:
 
     F_c -= d*en*ds
 
-    # stabilisation
+    # SU stabilisation
     # vnorm = norm(u_1) + 1e-7*e**-(norm(u_1)*1.0e5)
     vnorm = sqrt(inner(u_0_ta, u_0_ta) + 1e-7*e**-(inner(u_0_ta, u_0_ta)*1.0e5))
     stab_F_c = nu_scale*h/vnorm*inner(u_0_ta, grad(d))*inner(u_0_ta, grad(c_ta))*dx

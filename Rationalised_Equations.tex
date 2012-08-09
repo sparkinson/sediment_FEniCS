@@ -28,7 +28,7 @@
 
 \begin{document}
 
-\subsection{Incremental pressure correction (IPCS):}
+\section{Incremental pressure correction (IPCS):}
 
 \begin{dmath}
   {\bf u}^{n-\theta} = \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}^{n}
@@ -37,24 +37,24 @@
   {\bf u}^{n-\theta nl} = \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_*
 \end{dmath}
 
-Tentative velocity step:
+\emph{Tentative velocity step}:
 \begin{dmath}
   \int_\Omega {\bf v} \frac{{\bf u}_* - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \left( {\bf u}^{n-\theta} \right) \cdot \nabla {\bf u}^{n-\theta nl} \; d\Omega + \int_\Omega \nabla {\bf v} \cdot \nabla {\bf u}^{n-\theta} \; d\Omega - \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \nabla p_* \; d\Omega \\ - \int_\Upgamma {\bf v} g \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
 \end{dmath}
 
-Pressure equation:
+\emph{Pressure equation}:
 \begin{dmath}
   \int_\Omega \nabla q \cdot {\bf u}_* \; d\Omega - \int_\Upgamma q \left( {\bf u}_{n} \cdot n \right) \; d\Upgamma = \Delta t \int_\Omega \nabla q \cdot \nabla \left(p - p_* \right) \; d\Omega  \condition{$\forall q$}
 \end{dmath}
 
-Corrected velocity:
+\emph{Corrected velocity}:
 \begin{dmath}
   \int_\Omega {\bf v} \cdot \frac{{\bf u}_n - {\bf u}_*}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla \left(p - p_* \right) \; d\Omega = 0 \condition{$\forall {\bf v}$}
 \end{dmath}
 
 \subsection{Avoiding Assembly:}
 
-Tentative velocity step:
+\emph{Tentative velocity step:}
 \begin{dmath}
   \int_\Omega {\bf v} \cdot \frac{{\bf u}_* - {\bf u}_{n-1}}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_* \right) \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_{* - 1} \right) \; d\Omega + \int_\Omega \nabla {\bf v} \cdot \nabla \left( \theta {\bf u}^{n-1} + \left(1 - \theta \right) {\bf u}_* \right) \; d\Omega - \int_\Omega {\bf v} {\bf f} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla p_* \; d\Omega \\ - \int_\Upgamma {\bf v} \cdot g \; d\Upgamma = 0 \condition{$\forall {\bf v}$}
 \end{dmath}
@@ -100,6 +100,83 @@ no forcing and full dirichlet conditions
 
 \begin{dmath}
   \int_\Omega \left [ \frac{M}{\Delta t} + \left(1 - \theta \right) K + \left(1 - \theta \right) A \right] {\bf U}_* \; d\Omega = \int_\Omega \left [ \frac{M}{\Delta t} - \theta \; K - \theta \; A \right] {\bf U}^{n-1} \; d\Omega - \int_\Omega \phi_j \cdot \nabla p_* \; d\Omega \condition{$\forall \phi_j$}
+\end{dmath}
+
+\emph{Pressure equation:}
+\begin{dmath}
+  \int_\Omega \nabla q \cdot {\bf u}_* \; d\Omega - \int_\Upgamma q \left( {\bf u}_{n} \cdot n \right) \; d\Upgamma = \Delta t \int_\Omega \nabla q \cdot \nabla \left(p - p_* \right) \; d\Omega  \condition{$\forall q$}
+\end{dmath}
+\begin{dmath}
+   \int_\Omega \nabla q \cdot \nabla p \; d\Omega = \int_\Omega \nabla q \cdot \nabla p_* \; d\Omega + \int_\Omega \frac{1}{\Delta t} \nabla q \cdot {\bf u}_* \; d\Omega \; d\Upgamma \condition{$\forall q$}
+\end{dmath}
+
+\emph{Corrected velocity:}
+\begin{dmath}
+  \int_\Omega {\bf v} \cdot \frac{{\bf u}_n - {\bf u}_*}{\Delta t} \; d\Omega + \int_\Omega {\bf v} \cdot \nabla \left(p - p_* \right) \; d\Omega = 0 \condition{$\forall {\bf v}$}
+\end{dmath}
+\begin{dmath}
+  \int_\Omega {\bf v} \cdot {\bf u}_n \; d\Omega = \int_\Omega {\bf v} \cdot {\bf u}_* \; d\Omega - \Delta t \int_\Omega {\bf v} \cdot \nabla \left(p - p_* \right) \; d\Omega \condition{$\forall {\bf v}$}
+\end{dmath}
+
+\section{Advection of sediment:}
+
+\begin{dmath}
+  \frac{\partial \left( c^{n} - c^{n-1}\right)}{\Delta t} + \nabla \cdot \left( {\bf u}^{n-\theta} c^{n-\theta} \right) + \nabla \cdot \left( {\bf k} u_{sink} c^{n-\theta} \right)- \nabla \cdot \left( \nu_T \nabla c^{n-\theta} \right) = s
+\end{dmath}
+
+\begin{dmath}
+  \int_\Omega \psi \frac{\partial \left( c^{n} - c^{n-1}\right)}{\Delta t} \; d\Omega +\int_\Omega  \psi \nabla \cdot \left( {\bf u}^{n-\theta} c^{n-\theta} \right) \; d\Omega + \int_\Omega \psi \nabla \cdot \left( {\bf k} u_{sink} c^{n-\theta} \right)  \; d\Omega - \int_\Omega \psi \nabla \cdot \left( \nu_T \nabla c^{n-\theta} \right) \; d\Omega = \int_\Omega \psi s \; d\Omega
+\end{dmath}
+
+\begin{dmath}
+  \int_\Omega \psi \frac{\partial \left( c^{n} - c^{n-1}\right)}{\Delta t} \; d\Omega +\int_\Omega  \psi \nabla \cdot \left( {\bf u}^{n-\theta} c^{n-\theta} \right) \; d\Omega - \\ \int_\Omega \nabla \psi \cdot \left( {\bf k} u_{sink} c^{n-\theta} \right)  \; d\Omega + \int_\Omega \nabla \psi \cdot \left( \nu_T \nabla c^{n-\theta} \right) \; d\Omega = \int_\Omega \psi s \; d\Omega - \int_{\Upgamma_{deposit}} \psi \cdot \left( {\bf n} \cdot {\bf k} u_{sink} c^{n-\theta} \right) \; d\Upgamma + \int_{\Upgamma_N} \psi \cdot g \; d\Upgamma 
+\end{dmath}
+
+\subsection{SU Stabilisation:}
+
+\begin{dmath}
+  S = \int_\Omega \frac{\nu h}{||{\bf u}^{n-\theta}||} \left( {\bf u}^{n-\theta} \cdot \nabla \psi \right) \left( {\bf u}^{n-\theta} \cdot \nabla c^{n-\theta} \right)  \; d\Omega
+\end{dmath}
+
+\begin{dmath}
+  \int_\Omega \psi \frac{\partial \left( c^{n} - c^{n-1}\right)}{\Delta t} \; d\Omega +\int_\Omega  \psi \nabla \cdot \left( {\bf u}^{n-\theta} c^{n-\theta} \right) \; d\Omega - \\ \int_\Omega \nabla \psi \cdot \left( {\bf k} u_{sink} c^{n-\theta} \right)  \; d\Omega + \int_\Omega \nabla \psi \cdot \left( \nu_T \nabla c^{n-\theta} \right) \; d\Omega + S = \int_\Omega \psi s \; d\Omega - \int_{\Upgamma_{deposit}} \psi \cdot \left( {\bf n} \cdot {\bf k} u_{sink} c^{n-\theta} \right) \; d\Upgamma + \int_{\Upgamma_N} \psi \cdot g \; d\Upgamma 
+\end{dmath}
+
+\subsection{Avoiding Assembly:}
+
+\begin{dmath}
+  \int_\Omega \psi \frac{\left( c^{n} - c^{n-1}\right)}{\Delta t} \; d\Omega +\int_\Omega  \psi \nabla \cdot \left( {\bf u}^{n-\theta} \left( \theta c^{n-1} + \left( 1 - \theta \right) c^{n} \right) \right) \; d\Omega - \\ \int_\Omega \nabla \psi \cdot \left( {\bf k} u_{sink} \left( \theta c^{n-1} + \left( 1 - \theta \right) c^{n} \right) \right)  \; d\Omega + \int_\Omega \nabla \psi \cdot \left( \nu_T \nabla \left( \theta c^{n-1} + \left( 1 - \theta \right) c^{n} \right) \right) \; d\Omega + S \left( \theta c^{n-1} + \left( 1 - \theta \right) c^{n} \right) = \int_\Omega \psi s \; d\Omega  - \int_{\Upgamma_{deposit}} \psi \cdot \left( {\bf n} \cdot {\bf k} u_{sink} \left( \theta c^{n-1} + \left( 1 - \theta \right) c^{n} \right) \right) \; d\Upgamma + \int_{\Upgamma_N} \psi \cdot g \; d\Upgamma
+\end{dmath}
+
+\begin{dmath}
+  \int_\Omega \psi \frac{c^{n}}{\Delta t} \; d\Omega + \int_\Omega  \left( 1 - \theta \right) \psi \nabla \cdot \left( {\bf u}^{n-\theta} c^{n} \right) \; d\Omega - \int_\Omega \left( 1 - \theta \right) \nabla \psi \cdot \left( {\bf k} u_{sink} c^{n} \right)  \; d\Omega + \\ \int_\Omega \left( 1 - \theta \right) \nabla \psi \cdot \left( \nu_T \nabla c^{n} \right) \; d\Omega + \int_{\Upgamma_{deposit}} \left( 1 - \theta \right) \psi \cdot \left( {\bf n} \cdot {\bf k} u_{sink} c^{n} \right) \; d\Upgamma + S \left( \left( 1 - \theta \right) c^{n} \right) = \\ \int_\Omega \psi \frac{c^{n-1}}{\Delta t} \; d\Omega - \int_\Omega  \theta \psi \nabla \cdot \left( {\bf u}^{n-\theta} c^{n-1} \right) \; d\Omega + \int_\Omega \theta \nabla \psi \cdot \left( {\bf k} u_{sink} c^{n-1} \right)  \; d\Omega + \\ \int_\Omega \theta \nabla \psi \cdot \left( \nu_T \nabla c^{n-1} \right) \; d\Omega- \int_{\Upgamma_{deposit}} \theta \psi \cdot \left( {\bf n} \cdot {\bf k} u_{sink} c^{n-1} \right) \; d\Upgamma + \\ \int_{\Upgamma_N} \psi \cdot g \; d\Upgamma + \int_\Omega \psi s \; d\Omega - S \left( \theta c^{n-1} \right) 
+\end{dmath}
+
+\begin{dmath}
+  \int_\Omega \frac{\psi_i \psi_j}{\Delta t} C^{n} \; d\Omega + \int_\Omega  \left( 1 - \theta \right) \psi_i \nabla \cdot \left( {\bf u}^{n-\theta} \psi_j \right) C^{n} \; d\Omega - \int_\Omega \left( 1 - \theta \right) \nabla \psi_i \cdot \left( {\bf k} u_{sink} \psi_j  \right) C^{n} \; d\Omega + \\ \int_\Omega \left( 1 - \theta \right) \nabla \psi_i \cdot \left( \nu_T \nabla \psi_j \right) C^{n} \; d\Omega + \int_{\Upgamma_{deposit}} \left( 1 - \theta \right) \psi_i \cdot \left( {\bf n} \cdot {\bf k} u_{sink} \psi_j \right) C^{n} \; d\Upgamma + \int_\Omega \left( 1 - \theta \right) \frac{\nu h}{||{\bf u}^{n-\theta}||} \left( {\bf u}^{n-\theta} \cdot \nabla \psi_i \right) \left( {\bf u}^{n-\theta} \cdot \nabla \psi_j \right) C^{n} \; d\Omega = \\ \int_\Omega \frac{\psi_i \psi_j}{\Delta t} C^{n-1} \; d\Omega - \int_\Omega  \theta \psi_i \nabla \cdot \left( {\bf u}^{n-\theta} \psi_j \right) C^{n-1} \; d\Omega + \int_\Omega \theta \nabla \psi_i \cdot \left( {\bf k} u_{sink} \psi_j \right) C^{n-1} \; d\Omega + \\ \int_\Omega \theta \nabla \psi_i \cdot \left( \nu_T \nabla \psi_j \right) C^{n-1} \; d\Omega- \int_{\Upgamma_{deposit}} \theta \psi_i \cdot \left( {\bf n} \cdot {\bf k} u_{sink} \psi_j \right) C^{n-1} \; d\Upgamma + \\ \int_{\Upgamma_N} \psi_i \cdot g \; d\Upgamma + \int_\Omega \psi_i s \; d\Omega - \int_\Omega \theta \frac{\nu h}{||{\bf u}^{n-\theta}||} \left( {\bf u}^{n-\theta} \cdot \nabla \psi_i \right) \left( {\bf u}^{n-\theta} \cdot \nabla \psi_j \right) C^{n-1} \; d\Omega
+\end{dmath}
+
+\begin{dmath}
+  M = \psi_i \psi_j
+\end{dmath}
+\begin{dmath}
+  D = \nabla \psi_i \cdot \left( \nu_T \nabla \psi_j \right)
+\end{dmath}
+\begin{dmath}
+  A = \psi_i \nabla \cdot \left( {\bf u}^{n-\theta} \psi_j \right)
+\end{dmath}
+\begin{dmath}
+  A_{sink} = \nabla \psi_i \cdot \left( {\bf k} u_{sink} \psi_j  \right)
+\end{dmath}
+\begin{dmath}
+  \tilde{A}_{sink} = \psi_i \cdot \left( {\bf n} \cdot {\bf k} u_{sink} \psi_j \right)
+\end{dmath}
+\begin{dmath}
+  S = \frac{\nu h}{||{\bf u}^{n-\theta}||} \left( {\bf u}^{n-\theta} \cdot \nabla \psi_i \right) \left( {\bf u}^{n-\theta} \cdot \nabla \psi_j \right)
+\end{dmath}
+
+\begin{dmath}
+  \int_\Omega \left[ \frac{M}{\Delta t} + \left( 1 - \theta \right) A - \left( 1 - \theta \right) A_{sink} + \left( 1 - \theta \right) D + \left( 1 - \theta \right) S \right] C^{n} \; d\Omega + \int_{\Upgamma_{deposit}} \left( 1 - \theta \right) \tilde{A}_{sink} C^{n} \; d\Upgamma  = \\ \int_\Omega \left[ \frac{M}{\Delta t} - \theta A + \theta A_{sink} - \theta D - \theta S \right] C^{n-1} \; d\Omega- \int_{\Upgamma_{deposit}} \theta \tilde{A}_{sink} C^{n-1} \; d\Upgamma + \\ \int_{\Upgamma_N} \psi_i \cdot g \; d\Upgamma + \int_\Omega \psi_i s \; d\Omega 
 \end{dmath}
 
 \end{document}
