@@ -3,7 +3,6 @@
 
 from dolfin import *
 import numpy as np
-import mpi4py
 from os import getpid
 from commands import getoutput
 
@@ -42,10 +41,10 @@ parameters["std_out_all_processes"]              = False;
 
 # show information
 print_t = True
-print_progress = False
+print_progress = True
 info(parameters, False)
 set_log_active(True)
-# list_krylov_solver_preconditioners()
+list_krylov_solver_preconditioners()
 # list_lu_solver_methods()
 # list_krylov_solver_methods()
 
@@ -65,8 +64,8 @@ min_dt = 5e-3
 max_dt = 1e-1
 nl_its = 1
 picard_its = 3
-dX = 3.125e-3
-T =0.05
+dX = 3.5e-3
+T = 0.2
 nu_scale_ = 0.20
 beta_ = 4./2.
 L = 1.0
@@ -193,6 +192,7 @@ u_nl = theta*u_1 + (1.0-theta)*u_star
 a_C_m = inner(v, grad(u_nl)*u)*dx
 
 # pressure equation
+
 a_p = inner(grad(p), grad(q))*dx
 L_u = inner(u, grad(q))*dx
 
@@ -200,6 +200,7 @@ A_p = assemble(a_p)
 B_u = assemble(L_u)
 
 # velocity correction
+
 a_vc = inner(u, v)*dx
 L_vc_p = inner(grad(p), v)*dx
 
@@ -242,13 +243,13 @@ u_sol.parameters['nonzero_initial_guess'] = True
 u_sol.parameters['monitor_convergence'] = monitor_convergence
 reset_sparsity = True
 
-p_sol = KrylovSolver('bicgstab', 'ilu')
+p_sol = KrylovSolver('bicgstab', 'hypre_amg')
 p_sol.parameters['error_on_nonconvergence'] = False
 p_sol.parameters['nonzero_initial_guess'] = True
 p_sol.parameters['preconditioner']['reuse'] = True
 p_sol.parameters['monitor_convergence'] = monitor_convergence
 
-du_sol = KrylovSolver('cg', 'ilu')
+du_sol = KrylovSolver('cg', 'hypre_amg')
 du_sol.parameters['error_on_nonconvergence'] = False
 du_sol.parameters['nonzero_initial_guess'] = True
 du_sol.parameters['preconditioner']['reuse'] = True
@@ -381,7 +382,10 @@ while t < T:
         L_g_c = d*28.1e4*(inner(nu*grad(u_0_ta)*n, nu*grad(u_0_ta)*n))**1.25*ds
         G_c = assemble(L_g_c, tensor=G_c)
 
-        print G_c.array().max()
+        max_E = MPI.max(G_c.array().max())
+        if MPI.process_number() == 0:
+            info_red('Maximum entrainment rate = %.3e m/s = %.3e m/s * dt' % 
+                      (max_E, max_E*dt))
 
         b_c = inv_k*M_c*c_1.vector() - theta*Adv_c*c_1.vector() + theta*AdvSink_c*c_1.vector() \
             - theta*D_c*c_1.vector() - theta*S_c*c_1.vector() #+ G_c
@@ -407,8 +411,10 @@ while t < T:
 
         nl_it += 1
 
+    ############################################################
+    # Save/store values
+        
     if t > t_store:
-        # Save to file
         u_file << u_0
         p_file << p_0
         c_file << c_0
@@ -426,15 +432,16 @@ while t < T:
     c_1.assign(c_0)
     c_d_1.assign(c_d_0)
 
+    ############################################################
     # Adaptive time step
     dt = np.ma.fix_invalid(0.5*dX/abs(u_0.vector().array()))
-    dt = CFL*dt.min()
+    dt = MPI.min(CFL*dt.min())
     dt = max(dt, min_dt)
     dt = min(dt, max_dt)
 
     t += dt
     if MPI.process_number() == 0:
-            info_green("t = %.5f, dt = %.2e, picard iterations =" % (t, dt) + str(picard_its_store) + ", Eu = %.3e" % Eu)
+        info_green("t = %.5f, dt = %.2e, picard iterations =" % (t, dt) + str(picard_its_store) + ", Eu = %.3e" % Eu)
 
 list_timings()
 timer.stop()
