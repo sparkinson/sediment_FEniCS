@@ -5,20 +5,20 @@ import Sediment_MMSFunctions as mms
 parameters["std_out_all_processes"] = False;
 parameters["form_compiler"]["cpp_optimize"] = True
 parameters["form_compiler"]["quadrature_degree"] = 8
-parameters["num_threads"] = 2
+# parameters["num_threads"] = 1
 
 # simulation parameters
 dt_store = 1e-1
-shape_U = 2
+shape_U = 1
 shape_P = 1
 shape_C = 1 
 picard_tol = 1e1
 CFL = 0.5
-min_dt = 1e-4
+min_dt = 5e-2
 max_dt = 1e-1
-nl_its = 1
-dX = 0.5e-2
-T = 45.0
+nl_its = 3
+dX = 2.5e-2
+T = 5.0
 nu_scale_ = 0.20
 beta_ = 4./2.
 L = 3.0
@@ -184,6 +184,8 @@ b_vc = None
 Adv_c = None
 S_c = None
 G_c = None
+
+timer = Timer("run time") 
 
 ############################################################
 # time-loop
@@ -381,7 +383,7 @@ while t < T:
     c_1.assign(c_0)
     c_d_1.assign(c_d_0)
 
-    dt = Calc_timestep(u_0, h)
+    # dt = Calc_timestep(u_0, h)
 
     t += dt
     print "t = %.5f, dt = %.2e, picard iterations =" % (t, dt), picard_its, ", Eu = %.3e" % Eu
@@ -414,3 +416,6 @@ while t < T:
               (sum_0 + sum_1) * nl_its,
               loop_timer.value(),
               loop_timer.value() - (sum_0 + sum_1) * nl_its - save_timer.value()))
+
+timer.stop()
+print('Total computing time = ' + str(timer.value()))

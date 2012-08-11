@@ -81,7 +81,7 @@
     </dump_format>
     <dump_period>
       <constant>
-        <real_value rank="0">0.05</real_value>
+        <real_value rank="0">0.1</real_value>
       </constant>
     </dump_period>
     <output_mesh name="VelocityMesh"/>
@@ -97,10 +97,10 @@
       <real_value rank="0">0.0</real_value>
     </current_time>
     <timestep>
-      <real_value rank="0">0.05</real_value>
+      <real_value rank="0">0.005</real_value>
     </timestep>
     <finish_time>
-      <real_value rank="0">15</real_value>
+      <real_value rank="0">0.1</real_value>
     </finish_time>
     <nonlinear_iterations>
       <integer_value rank="0">3</integer_value>
@@ -159,9 +159,6 @@
             <integrate_continuity_by_parts/>
           </continuous_galerkin>
         </spatial_discretisation>
-        <reference_coordinates>
-          <real_value shape="2" dim1="dim" rank="1">0.8 0.4</real_value>
-        </reference_coordinates>
         <scheme>
           <poisson_pressure_solution>
             <string_value lines="1">never</string_value>
@@ -170,7 +167,7 @@
         </scheme>
         <solver>
           <iterative_method name="cg"/>
-          <preconditioner name="mg"/>
+          <preconditioner name="ilu"/>
           <relative_error>
             <real_value rank="0">1.0e-07</real_value>
           </relative_error>
@@ -224,12 +221,7 @@
         <spatial_discretisation>
           <continuous_galerkin>
             <stabilisation>
-              <streamline_upwind>
-                <nu_bar_optimal/>
-                <nu_scale name="0.5">
-                  <real_value shape="1" rank="0">0.5</real_value>
-                </nu_scale>
-              </streamline_upwind>
+              <no_stabilisation/>
             </stabilisation>
             <mass_terms>
               <lump_mass_matrix/>
@@ -245,10 +237,10 @@
         </spatial_discretisation>
         <temporal_discretisation>
           <theta>
-            <real_value rank="0">1.0</real_value>
+            <real_value rank="0">0.5</real_value>
           </theta>
           <relaxation>
-            <real_value rank="0">1.0</real_value>
+            <real_value rank="0">0.5</real_value>
           </relaxation>
         </temporal_discretisation>
         <solver>
@@ -355,8 +347,8 @@
             <stabilisation>
               <streamline_upwind>
                 <nu_bar_unity/>
-                <nu_scale name="0.5">
-                  <real_value shape="1" rank="0">0.5</real_value>
+                <nu_scale name="custom">
+                  <real_value rank="0">0.2</real_value>
                 </nu_scale>
               </streamline_upwind>
             </stabilisation>
@@ -371,7 +363,7 @@
         </spatial_discretisation>
         <temporal_discretisation>
           <theta>
-            <real_value rank="0">1.0</real_value>
+            <real_value rank="0">0.5</real_value>
           </theta>
         </temporal_discretisation>
         <solver>

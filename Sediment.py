@@ -9,7 +9,7 @@ parameters["form_compiler"]["quadrature_degree"] = 4
 
 # simulation parameters
 dt_store = 1e-10
-shape_U = 2
+shape_U = 1
 shape_P = 1
 shape_C = 1 
 picard_tol = 1e-5
