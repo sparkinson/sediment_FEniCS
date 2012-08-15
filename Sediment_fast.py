@@ -1,34 +1,7 @@
-############################################################
-# INIT
-
 from dolfin import *
-# from dolfin_adjoint import *
+from dolfin_adjoint import *
+from dolfin_tools import *
 import numpy as np
-from os import getpid
-from commands import getoutput
-
-def getMyMemoryUsage():
-    mypid = getpid()
-    mymemory = getoutput("ps -o rss %s" % mypid).split()[1]
-    return mymemory
-
-# The following helper functions are available in dolfin
-# They are redefined here for printing only on process 0. 
-RED   = "\033[1;37;31m%s\033[0m"
-BLUE  = "\033[1;37;34m%s\033[0m"
-GREEN = "\033[1;37;32m%s\033[0m"
-
-def info_blue(s):
-    if MPI.process_number()==0:
-        print BLUE % s
-
-def info_green(s):
-    if MPI.process_number()==0:
-        print GREEN % s
-    
-def info_red(s):
-    if MPI.process_number()==0:
-        print RED % s
 
 ############################################################
 # DOLFIN SETTINGS
@@ -340,7 +313,7 @@ while t < T:
         while (Eu > picard_tol and picard_it < picard_its):
 
             # Define tentative velocity step
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Assembling tentative velocity step')
 
             if not adams_bashforth or (picard_it == 0 and nl_it == 0):
@@ -380,33 +353,33 @@ while t < T:
             reset_sparsity = False
 
             # Compute tentative velocity step
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Computing tentative velocity step')
 
             [bc.apply(A_m, b_m) for bc in bcu]
             u_sol.solve(A_m, u_['0'].vector(), b_m)
             
             # Define pressure correction
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Building pressure correction rhs')
 
             b_p = inv_k*B_u*u_['0'].vector() + A_p*p_['star'].vector()
 
             # Compute pressure correction
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Computing pressure correction')
                             
             p_sol.solve(A_p, p_['0'].vector(), b_p)
 
             # Define velocity correction
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Assembling velocity correction')
 
             dp = p_['0'].vector() - p_['star'].vector()
             b_vc = A_vc*u_['0'].vector() - dt*B_vc_p*dp
 
             # Compute velocity correction
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Computing velocity correction')
 
             # [bc.apply(b_vc) for bc in bcu]
@@ -415,7 +388,7 @@ while t < T:
             Eu = errornorm(u_['0'], u_['star'], norm_type="L2", degree=shape_U + 1)
 
             # Assign new u_['star'] and p_['star']
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Writing u_star and p_star')
             u_['star'].assign(u_['0'])
             p_['star'].assign(p_['0'])
@@ -430,7 +403,7 @@ while t < T:
         # ADVECTION-DIFFUSION
 
         # Define advection-diffusion equation
-        if print_progress and MPI.process_number() == 0:
+        if print_progress:
             info_blue('Assembling advection-diffusion equation')
 
         Adv_c = assemble(a_Adv_c, tensor=Adv_c)
@@ -451,7 +424,7 @@ while t < T:
             theta*AdvSink_c*c_['1'].vector() - theta*D_c*c_['1'].vector() - \
             theta*S_c*c_['1'].vector() #+ G_c
 
-        if print_progress and MPI.process_number() == 0:
+        if print_progress:
             info_blue('Compute advection-diffusion of sediment')
 
         c_sol.solve(A_c, c_['0'].vector(), b_c)
@@ -459,14 +432,14 @@ while t < T:
         # DEPOSITED SEDIMENT
 
         # Define velocity correction
-        if print_progress and MPI.process_number() == 0:
+        if print_progress:
             info_blue('Assembling deposition equation')
 
         A_c_d = inv_k*M_c
         b_c_d = inv_k*M_c*c_d_['1'].vector() + (1.0-theta)*SI_c_d*c_['0'].vector() + \
             theta*SI_c_d*c_['1'].vector()
 
-        if print_progress and MPI.process_number() == 0:
+        if print_progress:
             info_blue('Compute deposition of sediment')
 
         c_sol.solve(A_c_d, c_d_['0'].vector(), b_c_d)
@@ -485,7 +458,7 @@ while t < T:
         t_store += dt_store
 
     # Storing values
-    if print_progress and MPI.process_number() == 0:
+    if print_progress:
         info_blue('Storing values for next timestep')
 
     # Store values for next timestep
@@ -502,8 +475,7 @@ while t < T:
     dt = min(dt, max_dt)
 
     t += dt
-    if MPI.process_number() == 0:
-        info_green("t = %.5f, dt = %.2e, picard iterations =" % (t, dt) + str(picard_its_store) + ", Eu = %.3e" % Eu)
+    info_green("t = %.5f, dt = %.2e, picard iterations =" % (t, dt) + str(picard_its_store) + ", Eu = %.3e" % Eu)
 
 # J = FinalFunctional(inner(u, u)*dx)
 # dJdic = compute_gradient(J, InitialConditionParameter(c_0), forget=False)

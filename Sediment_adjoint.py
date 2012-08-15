@@ -1,34 +1,7 @@
-############################################################
-# INIT
-
 from dolfin import *
 from dolfin_adjoint import *
+from dolfin_tools import *
 import numpy as np
-from os import getpid
-from commands import getoutput
-
-def getMyMemoryUsage():
-    mypid = getpid()
-    mymemory = getoutput("ps -o rss %s" % mypid).split()[1]
-    return mymemory
-
-# The following helper functions are available in dolfin
-# They are redefined here for printing only on process 0. 
-RED   = "\033[1;37;31m%s\033[0m"
-BLUE  = "\033[1;37;34m%s\033[0m"
-GREEN = "\033[1;37;32m%s\033[0m"
-
-def info_blue(s):
-    if MPI.process_number()==0:
-        print BLUE % s
-
-def info_green(s):
-    if MPI.process_number()==0:
-        print GREEN % s
-    
-def info_red(s):
-    if MPI.process_number()==0:
-        print RED % s
 
 ############################################################
 # DOLFIN SETTINGS
@@ -43,7 +16,7 @@ parameters["std_out_all_processes"]              = False;
 print_t = True
 print_progress = True
 info(parameters, False)
-set_log_active(True)
+set_log_active(False)
 # list_krylov_solver_preconditioners()
 # list_lu_solver_methods()
 # list_krylov_solver_methods()
@@ -64,9 +37,9 @@ shape_C = 1
 dt_store = 1e-1
 
 # time-loop
-min_timestep = 1e-2
-max_timestep = 1e-2
-T = 50
+min_timestep = 0.5e-1
+max_timestep = 0.5e-1
+T = 5
 CFL = 0.5
 nl_its = 1
 picard_its = 2
@@ -75,8 +48,8 @@ theta = 0.5
 adams_bashforth = False
 
 # mesh
-dX = 1e-2
-L = 3.0
+dX = 2e-2
+L = 0.5
 
 # stabilisation
 nu_scale_u_ = 0.05
@@ -193,35 +166,6 @@ bcu  = [DirichletBC(V, no_slip, "on_boundary && (near(x[0], 0.0) || near(x[0], "
         ]
 
 ############################################################
-# define solver settings
-
-monitor_convergence = False
-
-u_sol = KrylovSolver('gmres', 'sor')
-u_sol.parameters['error_on_nonconvergence'] = False
-u_sol.parameters['nonzero_initial_guess'] = True
-u_sol.parameters['monitor_convergence'] = monitor_convergence
-reset_sparsity = True
-
-p_sol = KrylovSolver('bicgstab', 'hypre_amg')
-p_sol.parameters['error_on_nonconvergence'] = False
-p_sol.parameters['nonzero_initial_guess'] = True
-p_sol.parameters['preconditioner']['reuse'] = True
-p_sol.parameters['monitor_convergence'] = monitor_convergence
-
-du_sol = KrylovSolver('cg', 'hypre_amg')
-du_sol.parameters['error_on_nonconvergence'] = False
-du_sol.parameters['nonzero_initial_guess'] = True
-du_sol.parameters['preconditioner']['reuse'] = True
-du_sol.parameters['monitor_convergence'] = monitor_convergence
-
-c_sol = KrylovSolver('gmres', 'sor')
-du_sol.parameters['error_on_nonconvergence'] = False
-du_sol.parameters['nonzero_initial_guess'] = True
-du_sol.parameters['preconditioner']['reuse'] = True
-du_sol.parameters['monitor_convergence'] = monitor_convergence
-
-############################################################
 # store initial conditions
 
 u_file << u_['0']
@@ -317,44 +261,44 @@ while t < T:
         picard_it = 0
         while (Eu > picard_tol and picard_it < picard_its):
             # Compute tentative velocity step
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Computing tentative velocity step')
             solve(F == 0, u_['star'], bcu)
 
             # Pressure correction
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Computing pressure correction')
             solve(P == 0, p_['0'])
 
             # Velocity correction
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Computing velocity correction')
             solve(F_2 == 0, u_['0'], bcu)
 
             Eu = errornorm(u_['0'], u_['star'], norm_type="L2", degree=shape_U + 1)
 
             # Assign new u_['star'] and p_['star']
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Writing u_star and p_star')
             u_['star'].assign(u_['0'])
             p_['star'].assign(p_['0'])
 
             picard_it += 1
 
-            if picard_it > 10 and MPI.process_number() == 0:
+            if picard_it > 10:
                 info_red("struggling to converge velocity field. Error=%.2e" % Eu)
 
         picard_its_store.append(picard_it)
 
         # ADVECTION-DIFFUSION
 
-        if print_progress and MPI.process_number() == 0:
+        if print_progress:
             info_blue('Compute advection-diffusion of sediment')
         solve(F_c == 0, c_['0'])
 
         # DEPOSITED SEDIMENT
 
-        if print_progress and MPI.process_number() == 0:
+        if print_progress:
             info_blue('Compute deposition of sediment')
         solve(D == 0, c_d_['0'])
 
@@ -382,8 +326,7 @@ while t < T:
     timestep = min(timestep, max_timestep)
 
     t += timestep
-    if MPI.process_number() == 0:
-        info_green("t = %.5f, timestep = %.2e, picard iterations =" % (t, timestep) + str(picard_its_store) + ", Eu = %.3e" % Eu)
+    info_green("t = %.5f, timestep = %.2e, picard iterations =" % (t, timestep) + str(picard_its_store) + ", Eu = %.3e" % Eu)
 
 J = Functional(c_d_['0']*dx*dt[FINISH_TIME])
 dJdic = compute_gradient(J, InitialConditionParameter(c_['0']), forget=False)
@@ -397,6 +340,5 @@ list_timings()
 timer.stop()
 # Check how much memory is used
 dolfin_memory_use = getMyMemoryUsage()
-if MPI.process_number() == 0:
-    info_red('Memory used = ' + dolfin_memory_use)
-    info_red('Total computing time = ' + str(timer.value()))
+info_red('Memory used = ' + dolfin_memory_use)
+info_red('Total computing time = ' + str(timer.value()))

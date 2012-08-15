@@ -1,34 +1,7 @@
-############################################################
-# INIT
-
 from dolfin import *
 from dolfin_adjoint import *
+from dolfin_tools import *
 import numpy as np
-from os import getpid
-from commands import getoutput
-
-def getMyMemoryUsage():
-    mypid = getpid()
-    mymemory = getoutput("ps -o rss %s" % mypid).split()[1]
-    return mymemory
-
-# The following helper functions are available in dolfin
-# They are redefined here for printing only on process 0. 
-RED   = "\033[1;37;31m%s\033[0m"
-BLUE  = "\033[1;37;34m%s\033[0m"
-GREEN = "\033[1;37;32m%s\033[0m"
-
-def info_blue(s):
-    if MPI.process_number()==0:
-        print BLUE % s
-
-def info_green(s):
-    if MPI.process_number()==0:
-        print GREEN % s
-    
-def info_red(s):
-    if MPI.process_number()==0:
-        print RED % s
 
 ############################################################
 # DOLFIN SETTINGS
@@ -61,8 +34,8 @@ shape_P = 1
 shape_C = 1 
 
 # time-loop
-min_timestep = 1e-2
-max_timestep = 1e-1
+min_timestep = 0.1
+max_timestep = 0.1
 T = 0.5
 CFL = 0.5
 nl_its = 1
@@ -73,7 +46,7 @@ adams_bashforth = False
 
 # mesh
 dX = 1e-2
-L = 1.0
+L = 0.4
 
 # stabilisation
 nu_scale_u_ = 0.05
@@ -84,7 +57,7 @@ optimal_beta = False
 # sediment
 R = 2.217
 d = 25e-6
-conc = 3.49e-03
+conc = 7e-03
 kappa_ = 0.0
 u_sink_ = 5.5e-4
 
@@ -101,7 +74,7 @@ def main(nu):
     u_sink = Constant(u_sink_)
 
     # initialise timestep
-    timestep = max_timestep
+    timestep = min_timestep
 
     # generate expressions for initial conditions, boundary conditions and source terms
     u_s = Expression(('0.0', '0.0'), degree = shape_U + 1)
@@ -180,35 +153,6 @@ def main(nu):
             DirichletBC(V, no_slip, "on_boundary && near(x[1], 0.0)"),
             DirichletBC(V.sub(1), free_slip, "on_boundary && near(x[1], 0.4)")
             ]
-
-    ############################################################
-    # define solver settings
-
-    monitor_convergence = False
-
-    u_sol = KrylovSolver('gmres', 'sor')
-    u_sol.parameters['error_on_nonconvergence'] = False
-    u_sol.parameters['nonzero_initial_guess'] = True
-    u_sol.parameters['monitor_convergence'] = monitor_convergence
-    reset_sparsity = True
-
-    p_sol = KrylovSolver('bicgstab', 'hypre_amg')
-    p_sol.parameters['error_on_nonconvergence'] = False
-    p_sol.parameters['nonzero_initial_guess'] = True
-    p_sol.parameters['preconditioner']['reuse'] = True
-    p_sol.parameters['monitor_convergence'] = monitor_convergence
-
-    du_sol = KrylovSolver('cg', 'hypre_amg')
-    du_sol.parameters['error_on_nonconvergence'] = False
-    du_sol.parameters['nonzero_initial_guess'] = True
-    du_sol.parameters['preconditioner']['reuse'] = True
-    du_sol.parameters['monitor_convergence'] = monitor_convergence
-
-    c_sol = KrylovSolver('gmres', 'sor')
-    du_sol.parameters['error_on_nonconvergence'] = False
-    du_sol.parameters['nonzero_initial_guess'] = True
-    du_sol.parameters['preconditioner']['reuse'] = True
-    du_sol.parameters['monitor_convergence'] = monitor_convergence
 
     ############################################################
     # initialise matrix memory
@@ -297,44 +241,44 @@ def main(nu):
             picard_it = 0
             while (Eu > picard_tol and picard_it < picard_its):
                 # Compute tentative velocity step
-                if print_progress and MPI.process_number() == 0:
+                if print_progress:
                     info_blue('Computing tentative velocity step')
                 solve(F == 0, u_['star'], bcu)
 
                 # Pressure correction
-                if print_progress and MPI.process_number() == 0:
+                if print_progress:
                     info_blue('Computing pressure correction')
                 solve(P == 0, p_['0'])
 
                 # Velocity correction
-                if print_progress and MPI.process_number() == 0:
+                if print_progress:
                     info_blue('Computing velocity correction')
                 solve(F_2 == 0, u_['0'], bcu)
 
                 Eu = errornorm(u_['0'], u_['star'], norm_type="L2", degree=shape_U + 1)
 
                 # Assign new u_['star'] and p_['star']
-                if print_progress and MPI.process_number() == 0:
+                if print_progress:
                     info_blue('Writing u_star and p_star')
                 u_['star'].assign(u_['0'])
                 p_['star'].assign(p_['0'])
 
                 picard_it += 1
 
-                if picard_it > 10 and MPI.process_number() == 0:
+                if picard_it > 10:
                     info_red("struggling to converge velocity field. Error=%.2e" % Eu)
 
             picard_its_store.append(picard_it)
 
             # ADVECTION-DIFFUSION
 
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Compute advection-diffusion of sediment')
             solve(F_c == 0, c_['0'])
 
             # DEPOSITED SEDIMENT
 
-            if print_progress and MPI.process_number() == 0:
+            if print_progress:
                 info_blue('Compute deposition of sediment')
             solve(D == 0, c_d_['0'])
 
@@ -347,14 +291,13 @@ def main(nu):
 
         ############################################################
         # Adaptive time step
-        # timestep = np.ma.fix_invalid(0.5*dX/abs(u_['0'].vector().array()))
-        # timestep = MPI.min(CFL*timestep.min())
-        # timestep = max(timestep, min_timestep)
-        # timestep = min(timestep, max_timestep)
+        timestep = np.ma.fix_invalid(0.5*dX/abs(u_['0'].vector().array()))
+        timestep = MPI.min(CFL*timestep.min())
+        timestep = max(timestep, min_timestep)
+        timestep = min(timestep, max_timestep)
 
         t += timestep
-        if MPI.process_number() == 0:
-            info_green("t = %.5f, timestep = %.2e, picard iterations =" % (t, timestep) + str(picard_its_store) + ", Eu = %.3e" % Eu)
+        info_green("t = %.5f, timestep = %.2e, picard iterations =" % (t, timestep) + str(picard_its_store) + ", Eu = %.3e" % Eu)
 
     return u_['0']
 
