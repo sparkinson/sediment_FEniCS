@@ -2,7 +2,7 @@
 # INIT
 
 from dolfin import *
-# from dolfin_adjoint import *
+from dolfin_adjoint import *
 import numpy as np
 from os import getpid
 from commands import getoutput
@@ -64,9 +64,9 @@ shape_C = 1
 dt_store = 1e-1
 
 # time-loop
-min_dt = 1e-2
-max_dt = 1e-1
-T = 2.0
+min_timestep = 1e-2
+max_timestep = 1e-2
+T = 50
 CFL = 0.5
 nl_its = 1
 picard_its = 2
@@ -76,7 +76,7 @@ adams_bashforth = False
 
 # mesh
 dX = 1e-2
-L = 1.0
+L = 3.0
 
 # stabilisation
 nu_scale_u_ = 0.05
@@ -95,10 +95,10 @@ u_sink_ = 5.5e-4
 nu_ = 1e-4
 
 # save files
-u_file = File("results/u.pvd") 
-p_file = File("results/p.pvd") 
-c_file = File("results/c.pvd")
-c_d_file = File("results/c_d.pvd")
+u_file = File("results/u_adj.pvd") 
+p_file = File("results/p_adj.pvd") 
+c_file = File("results/c_adj.pvd")
+c_d_file = File("results/c_d_adj.pvd")
 
 ############################################################
 # INITIALISE DEPENDENT PARAMETERS
@@ -111,8 +111,8 @@ nu_scale_c = Constant(nu_scale_c_)
 g = Constant(9.81)
 u_sink = Constant(u_sink_)
 
-# initialise dt
-dt = min_dt
+# initialise timestep
+timestep = min_timestep
 
 # generate expressions for initial conditions, boundary conditions and source terms
 u_s = Expression(('0.0', '0.0'), degree = shape_U + 1)
@@ -193,79 +193,6 @@ bcu  = [DirichletBC(V, no_slip, "on_boundary && (near(x[0], 0.0) || near(x[0], "
         ]
 
 ############################################################
-# define preassembled part of equations
-
-# MOMENTUM & CONSERVATION
-
-# momentum equation
-
-a_M_m = inner(v, u)*dx
-a_K_m = nu*inner(grad(u), grad(v))*dx
-L_P_m = inner(v, grad(p))*dx
-L_B_m = inner(v, g*g_vector*c*R)*dx
-
-M_m = assemble(a_M_m)
-K_m = assemble(a_K_m)
-P_m = assemble(L_P_m)
-B_m = assemble(L_B_m)
-        
-if adams_bashforth:
-    u_nl = 3./2.*u_['1'] - 1./.2*u_['2']
-else:   
-    u_nl = theta*u_['1'] + (1.0-theta)*u_['star']
-a_C_m = inner(v, grad(u_nl)*u)*dx
-vnorm_u = sqrt(inner(u_nl, u_nl) + 1.0e-14*e**-(inner(u_nl, u_nl)*1.0e5))
-u_dv = as_vector([u_nl[0]*v[i].dx(0) + u_nl[1]*v[i].dx(1) for i in range(2)])
-u_du = as_vector([u_nl[0]*u[i].dx(0) + u_nl[1]*u[i].dx(1) for i in range(2)])
-gRe = h*vnorm_u/nu
-if optimal_beta:
-    beta = atan(gRe)**-1.0 - 1.0*gRe**-1.0
-else:
-    beta = Constant(1.0)
-a_S_m = nu_scale_u*beta*h/vnorm_u*inner(u_dv, u_du)*dx
-
-# pressure equation
-
-a_p = inner(grad(p), grad(q))*dx
-L_u = inner(u, grad(q))*dx
-
-A_p = assemble(a_p)
-B_u = assemble(L_u)
-
-# velocity correction
-
-a_vc = inner(u, v)*dx
-L_vc_p = inner(grad(p), v)*dx
-
-A_vc = assemble(a_vc)
-B_vc_p = assemble(L_vc_p)
-
-[bc.apply(A_vc) for bc in bcu]
-
-# SEDIMENT ADVECTION AND DIFFUSION
-
-a_M_c = inner(d, c)*dx
-a_D_c = inner(grad(d), kappa*grad(c))*dx
-a_AdvSink_c = inner(grad(d), u_sink*g_vector*c)*dx
-u_sink_n_up = (inner(u_sink*g_vector, n) + abs(inner(u_sink*g_vector, n)))/2.0  
-a_AdvSink_hat_c = d*u_sink_n_up*c*ds
-
-M_c = assemble(a_M_c)
-D_c = assemble(a_D_c)
-AdvSink_c = assemble(a_AdvSink_c - a_AdvSink_hat_c)
-        
-u_ta = theta*u_['1']+(1.0-theta)*u_['0']
-a_Adv_c = d*div(u_ta*c)*dx
-vnorm_c = sqrt(inner(u_ta, u_ta) + 1e-14*e**-(inner(u_ta, u_ta)*1.0e5))
-a_S_c = nu_scale_c*h/vnorm_c*inner(u_ta, grad(d))*inner(u_ta, grad(c))*dx
-
-# DEPOSITION
-
-a_SI_c_d = d*u_sink_n_up*c*ds 
-
-SI_c_d = assemble(a_SI_c_d)
-
-############################################################
 # define solver settings
 
 monitor_convergence = False
@@ -317,15 +244,66 @@ timer = Timer("run time")
 
 ############################################################
 # time-loop
-t = dt
+t = timestep
 while t < T:
 
-    k = Constant(dt)
-    inv_k = 1.0/dt
+    k = Constant(timestep)
+    inv_k = 1.0/timestep
 
     nl_it = 0
     picard_its_store = []
 
+    ############################################################
+    # define equations to be solved
+
+    # time-averaged values
+    u_ta = theta*u_['1']+(1.0-theta)*u_['star']
+    c_ta = theta*c_['1']+(1.0-theta)*c_['0']
+    # non-linear variables
+    u_nl = theta*u_['1']+(1.0-theta)*u_['0']
+
+    # MOMENTUM & CONSERVATION
+
+    # momentum equation
+    F = (((1./k)*inner(v, u_['star'] - u_['1'])
+          + inner(grad(u_nl)*u_ta, v)
+          + nu*inner(grad(u_ta), grad(v))
+          - inner(v, Mf)
+          - div(v)*p_['star']
+          - inner(v, g*g_vector*c_ta*R)
+          )*dx
+         )
+    # pressure equation
+    P = ((k*inner(grad(p_['0'] - p_['star']), grad(q)) - 
+          inner(u_['star'], grad(q))
+          )*dx 
+         )
+    # velocity correction
+    F_2 = (inner(u_['0'], v) - 
+           inner(u_['star'], v) +
+           k*inner(grad(p_['0'] - p_['star']), v)
+           )*dx
+
+    # ADVECTION-DIFFUSION
+
+    # define equations to be solved 
+    vnorm_c = sqrt(inner(u_ta, u_ta) + 1e-14*e**-(inner(u_ta, u_ta)*1.0e5))
+    abs_sink_u = sqrt(inner(u_sink*g_vector, n)**2 + 1e-14*e**-(inner(u_sink*g_vector, n)**2*1.0e5))
+    u_sink_n_up = (inner(u_sink*g_vector, n) + abs_sink_u)/2.0  
+    F_c = (d*(1./k)*(c_['0']- c_['1'])*dx 
+           + d*div(u_ta*c_ta)*dx                
+           + inner(grad(d), - u_sink*g_vector*c_ta)*dx  # sinking velocity
+           + d*u_sink_n_up*c_ta*ds   # settling
+           + inner(grad(d), kappa*grad(c_ta))*dx   
+           - d*Af*dx   # forcing
+           + nu_scale_c*h/vnorm_c*inner(u_ta, grad(d))*inner(u_ta, grad(c_ta))*dx   # stabilisation
+           # - d*28.1e4*(inner(nu*grad(u_ta)*n, nu*grad(u_ta)*n))**1.25*ds   # reentrainment
+           )
+
+    # DEPOSITION
+    D = d*(c_d_['0'] - c_d_['1'])*dx - k*d*u_sink_n_up*c_ta*ds
+
+    nl_it = 0
     while nl_it < nl_its:
 
         ############################################################
@@ -338,79 +316,20 @@ while t < T:
         Ep = 1e6
         picard_it = 0
         while (Eu > picard_tol and picard_it < picard_its):
-
-            # Define tentative velocity step
-            if print_progress and MPI.process_number() == 0:
-                info_blue('Assembling tentative velocity step')
-
-            if not adams_bashforth or (picard_it == 0 and nl_it == 0):
-                C_m = assemble(a_C_m, tensor = C_m)
-            
-            A_m = inv_k*M_m + (1.0-theta)*K_m + (1.0-theta)*C_m
-            c_ta = theta*c_['1'].vector()+(1.0-theta)*c_['0'].vector()
-            b_m = inv_k*M_m*u_['1'].vector() - theta*K_m*u_['1'].vector() - \
-                theta*C_m*u_['1'].vector() - P_m*p_['star'].vector() + B_m*c_ta
-
-            if stabilise_u:
-                # F = d*temp*dx - d*vnorm_u*dx
-                # solve(F == 0, temp)
-
-                # print MPI.max(temp.vector().array().max())
-                # print MPI.min(temp.vector().array().min())
-                # print MPI.max(temp.vector().array().max())*dX/nu_
-
-                # F = d*temp*dx - d*gRe*dx
-                # solve(F == 0, temp)
-
-                # print MPI.max(temp.vector().array().max())
-                # print MPI.min(temp.vector().array().min())
-
-                # F = d*temp*dx - d*beta*dx
-                # solve(F == 0, temp)
-
-                # print MPI.max(temp.vector().array().max())
-                # print MPI.min(temp.vector().array().min())
-
-                if not adams_bashforth or (picard_it == 0 and nl_it == 0):
-                    S_m = assemble(a_S_m, tensor=S_m)
-                
-                A_m += (1.0-theta)*S_m
-                b_m += -theta*S_m*u_['1'].vector()
-
-            reset_sparsity = False
-
             # Compute tentative velocity step
             if print_progress and MPI.process_number() == 0:
                 info_blue('Computing tentative velocity step')
+            solve(F == 0, u_['star'], bcu)
 
-            [bc.apply(A_m, b_m) for bc in bcu]
-            u_sol.solve(A_m, u_['0'].vector(), b_m)
-            
-            # Define pressure correction
-            if print_progress and MPI.process_number() == 0:
-                info_blue('Building pressure correction rhs')
-
-            b_p = inv_k*B_u*u_['0'].vector() + A_p*p_['star'].vector()
-
-            # Compute pressure correction
+            # Pressure correction
             if print_progress and MPI.process_number() == 0:
                 info_blue('Computing pressure correction')
-                            
-            p_sol.solve(A_p, p_['0'].vector(), b_p)
+            solve(P == 0, p_['0'])
 
-            # Define velocity correction
-            if print_progress and MPI.process_number() == 0:
-                info_blue('Assembling velocity correction')
-
-            dp = p_['0'].vector() - p_['star'].vector()
-            b_vc = A_vc*u_['0'].vector() - dt*B_vc_p*dp
-
-            # Compute velocity correction
+            # Velocity correction
             if print_progress and MPI.process_number() == 0:
                 info_blue('Computing velocity correction')
-
-            # [bc.apply(b_vc) for bc in bcu]
-            du_sol.solve(A_vc, u_['0'].vector(), b_vc)
+            solve(F_2 == 0, u_['0'], bcu)
 
             Eu = errornorm(u_['0'], u_['star'], norm_type="L2", degree=shape_U + 1)
 
@@ -422,61 +341,27 @@ while t < T:
 
             picard_it += 1
 
-            if picard_it > 10:
-                info_blue("struggling to converge velocity field. Error=%.2e" % Eu)
+            if picard_it > 10 and MPI.process_number() == 0:
+                info_red("struggling to converge velocity field. Error=%.2e" % Eu)
 
         picard_its_store.append(picard_it)
 
         # ADVECTION-DIFFUSION
 
-        # Define advection-diffusion equation
-        if print_progress and MPI.process_number() == 0:
-            info_blue('Assembling advection-diffusion equation')
-
-        Adv_c = assemble(a_Adv_c, tensor=Adv_c)
-        S_c = assemble(a_S_c, tensor=S_c)
-
-        A_c = inv_k*M_c + (1.0-theta)*Adv_c - (1.0-theta)*AdvSink_c + (1.0-theta)*D_c + \
-            (1.0-theta)*S_c
-
-        L_g_c = d*28.1e4*(inner(nu*grad(u_ta)*n, nu*grad(u_ta)*n))**1.25*ds
-        G_c = assemble(L_g_c, tensor=G_c)
-
-        max_E = MPI.max(G_c.array().max())
-        if MPI.process_number() == 0:
-            info_red('Maximum entrainment rate = %.3e m/s = %.3e m/s * dt' % 
-                      (max_E, max_E*dt))
-
-        b_c = inv_k*M_c*c_['1'].vector() - theta*Adv_c*c_['1'].vector() + \
-            theta*AdvSink_c*c_['1'].vector() - theta*D_c*c_['1'].vector() - \
-            theta*S_c*c_['1'].vector() #+ G_c
-
         if print_progress and MPI.process_number() == 0:
             info_blue('Compute advection-diffusion of sediment')
-
-        c_sol.solve(A_c, c_['0'].vector(), b_c)
+        solve(F_c == 0, c_['0'])
 
         # DEPOSITED SEDIMENT
 
-        # Define velocity correction
-        if print_progress and MPI.process_number() == 0:
-            info_blue('Assembling deposition equation')
-
-        A_c_d = inv_k*M_c
-        b_c_d = inv_k*M_c*c_d_['1'].vector() + (1.0-theta)*SI_c_d*c_['0'].vector() + \
-            theta*SI_c_d*c_['1'].vector()
-
         if print_progress and MPI.process_number() == 0:
             info_blue('Compute deposition of sediment')
-
-        c_sol.solve(A_c_d, c_d_['0'].vector(), b_c_d)
+        solve(D == 0, c_d_['0'])
 
         nl_it += 1
 
-    ############################################################
-    # Save/store values
-        
     if t > t_store:
+        # Save to file
         u_file << u_['0']
         p_file << p_['0']
         c_file << c_['0']
@@ -484,35 +369,29 @@ while t < T:
 
         t_store += dt_store
 
-    # Storing values
-    if print_progress and MPI.process_number() == 0:
-        info_blue('Storing values for next timestep')
-
     # Store values for next timestep
-    u_['2'].assign(u_['1'])
     u_['1'].assign(u_['0'])
     c_['1'].assign(c_['0'])
     c_d_['1'].assign(c_d_['0'])
 
     ############################################################
     # Adaptive time step
-    dt = np.ma.fix_invalid(0.5*dX/abs(u_['0'].vector().array()))
-    dt = MPI.min(CFL*dt.min())
-    dt = max(dt, min_dt)
-    dt = min(dt, max_dt)
+    timestep = np.ma.fix_invalid(0.5*dX/abs(u_['0'].vector().array()))
+    timestep = MPI.min(CFL*timestep.min())
+    timestep = max(timestep, min_timestep)
+    timestep = min(timestep, max_timestep)
 
-    t += dt
+    t += timestep
     if MPI.process_number() == 0:
-        info_green("t = %.5f, dt = %.2e, picard iterations =" % (t, dt) + str(picard_its_store) + ", Eu = %.3e" % Eu)
+        info_green("t = %.5f, timestep = %.2e, picard iterations =" % (t, timestep) + str(picard_its_store) + ", Eu = %.3e" % Eu)
 
-# J = FinalFunctional(inner(u, u)*dx)
-# dJdic = compute_gradient(J, InitialConditionParameter(c_0), forget=False)
-# dJdnu = compute_gradient(J, ScalarParameter(nu))
+J = Functional(c_d_['0']*dx*dt[FINISH_TIME])
+dJdic = compute_gradient(J, InitialConditionParameter(c_['0']), forget=False)
+dJdu_s = compute_gradient(J, ScalarParameter(u_sink))
 
-# a_f = File("results/dJdic.pvd") 
-# b_f = File("results/dJdnu.pvd") 
-# a_f << dJdic
-# b_f << dJdnu
+print dJdu_s
+a_f = File("results/adj1.pvd") 
+a_f << dJdic
 
 list_timings()
 timer.stop()
