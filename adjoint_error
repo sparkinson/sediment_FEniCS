@@ -1,0 +1,53 @@
+In [1]: from dolfin import *
+
+In [2]: from dolfin_adjoint import *
+---------------------------------------------------------------------------
+ImportError                               Traceback (most recent call last)
+/data/sp911/Code/sediment_FEniCS/<ipython-input-2-9f7b809fb434> in <module>()
+----> 1 from dolfin_adjoint import *
+
+/usr/lib/python2.7/dist-packages/dolfin_adjoint/__init__.py in <module>()
+----> 1 from solving import *
+      2 from assembly import *
+      3 from expressions import *
+      4 from utils import *
+      5 from assign import *
+
+/usr/lib/python2.7/dist-packages/dolfin_adjoint/solving.py in <module>()
+      8 
+      9 import libadjoint
+---> 10 import libadjoint.exceptions
+     11 
+     12 import hashlib
+
+ImportError: No module named exceptions
+
+
+Traceback (most recent call last):
+  File "Sediment_fast.py", line 387, in <module>
+Traceback (most recent call last):
+  File "Sediment_fast.py", line 387, in <module>
+Traceback (most recent call last):
+  File "Sediment_fast.py", line 387, in <module>
+    u_sol.solve(A_m, u_['0'].vector(), b_m)
+    u_sol.solve(A_m, u_['0'].vector(), b_m)
+  File "/home/sp911/Code/dolfin-adjoint/dolfin_adjoint/krylov_solver.py", line 47, in solve
+  File "/home/sp911/Code/dolfin-adjoint/dolfin_adjoint/krylov_solver.py", line 47, in solve
+    assemble_system = A.assemble_system
+AttributeError: 'Matrix' object has no attribute 'assemble_system'
+    assemble_system = A.assemble_system
+    u_sol.solve(A_m, u_['0'].vector(), b_m)
+AttributeError: 'Matrix' object has no attribute 'assemble_system'
+  File "/home/sp911/Code/dolfin-adjoint/dolfin_adjoint/krylov_solver.py", line 47, in solve
+    assemble_system = A.assemble_system
+AttributeError: 'Matrix' object has no attribute 'assemble_system'
+Traceback (most recent call last):
+  File "Sediment_fast.py", line 387, in <module>
+    u_sol.solve(A_m, u_['0'].vector(), b_m)
+  File "/home/sp911/Code/dolfin-adjoint/dolfin_adjoint/krylov_solver.py", line 47, in solve
+    assemble_system = A.assemble_system
+AttributeError: 'Matrix' object has no attribute 'assemble_system'
+
+
+NameError: name 'FinalFunctional' is not defined
+    J = FinalFunctional(inner(u_['0'], u_['0'])*dx)
