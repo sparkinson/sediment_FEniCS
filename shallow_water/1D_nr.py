@@ -12,9 +12,9 @@ parameters["std_out_all_processes"]              = False;
 
 # show information
 print_time = True
-print_progress = True
+print_progress = False
 info(parameters, False)
-set_log_active(True)
+set_log_active(False)
 
 ############################################################
 # SIMULATION USER DEFINED PARAMETERS
@@ -25,11 +25,11 @@ shape_H = 1
 shape_PSI = 1 
 
 # output
-dt_store = 1e-1
-q_file = File("results/q.pvd") 
+dt_store = 1e-5
+u_file = File("results/u.pvd") 
 h_file = File("results/h.pvd") 
-psi_file = File("results/psi.pvd")
-psi_d_file = File("results/psi_d.pvd")
+phi_file = File("results/phi.pvd")
+phi_d_file = File("results/phi_d.pvd")
 
 # time-loop
 min_timestep = 1e-2
@@ -44,7 +44,7 @@ R = 2.217
 phi_0 = 3.49e-03
 h_0 = 0.4
 u_sink = 5.5e-4
-x_N_ = 0.2
+x_lg = 0.2
 
 # mesh
 dX = 1e-2
@@ -61,8 +61,9 @@ l_nd = 1./h_0
 g_0 = R*phi_0
 t_nd = 1./(h_0/g_0)**0.5
 u_nd = 1./(g_0*h_0)**0.5
-x_N = Constant(x_N_)
-x_N_prime = Constant(0.0)
+x_N = 1.0
+x_N_ = dict([[str(i), Constant(x_N)] for i in range(2)])
+x_N_prime_ = dict([[str(i), Constant(0.0)] for i in range(2)])
 
 # set constants
 beta = Constant(u_sink*u_nd)
@@ -105,6 +106,7 @@ z = TestFunction(Z)
 ############################################################
 # generate functions
 
+# non-dimensional
 q_ = dict([[str(i), Function(V)] for i in range(2)])
 h_ = dict([[str(i), interpolate(h_s, W)] for i in range(2)])
 psi_ =  dict([[str(i), interpolate(psi_s, Z)] for i in range(2)])
@@ -112,21 +114,25 @@ psi_d_ =  dict([[str(i), Function(Z)] for i in range(2)])
 X = Function(V)
 X.vector()[:] = mesh.coordinates()[:,0]
 
+# dimensional
+u = Function(V)
+h_d = Function(W)
+phi = Function(Z)
+
 ############################################################
 # define dirichlet boundary conditions
 
 no_slip = Expression('0.0', degree = shape_Q + 1)
-nose = Expression('Fr*pow(psi,0.5)*h', Fr=1.19, psi = 1.0, h = 1.0, degree = shape_Q + 1)
+nose = Expression('Fr*pow(psi,0.5)*h', Fr = 1.19, psi = 1.0, h = 1.0, degree = shape_Q + 1)
 bcq  = [DirichletBC(V, no_slip, "near(x[0], 0.0)"),
         DirichletBC(V, nose, "near(x[0], 1.0)")]
 
 ############################################################
 # store initial conditions
 
-q_file << q_['0']
-h_file << h_['0']
-psi_file << psi_['0']
-psi_d_file << psi_d_['0']
+u_file << u
+h_file << h_d
+phi_file << phi
 t_store = dt_store*t_nd
 
 list_timings()
@@ -135,49 +141,39 @@ timer = Timer("run time")
 ############################################################
 # define equations to be solved
 
-def F_q(q__, h__, psi__, k__, two_layer):
-    if two_layer:
-        tl = 1.0
-    else:
-        tl = 0.0
+def ta(vals):
+    return theta*vals['1']+(1.0-theta)*vals['0']
 
-    q_ta = theta*q__['1']+(1.0-theta)*q__['0']
-    psi_ta = theta*psi__['1']+(1.0-theta)*psi__['0']
-    h_ta = theta*h__['1']+(1.0-theta)*h__['0']
+def F_q(q, h, psi, k, x_N, x_N_prime):
     
-    F_q = (v*(1./k__)*(q__['0'] - q__['1'])*h_ta*dx + 
-           x_N**-1.0*(
-            v*(q_ta*q_ta*h_ta**-1.0 + 0.5*psi_ta*h_ta).dx()*dx -
-            v*X*x_N_prime*q_ta.dx()*dx
-            )
+    F_q = (v*(1./k)*(q['0'] - q['1'])*ta(h)*dx +
+           v/x_N['0']*(
+            (ta(q)*ta(q)/ta(h) + 0.5*ta(psi)*ta(h)).dx() 
+            - X*x_N_prime['0']*ta(q).dx()
+            )*dx
            )
 
     return F_q
 
-def F_h(q__, h__, k__):
-    q_ta = theta*q__['1']+(1.0-theta)*q__['0']
-    h_ta = theta*h__['1']+(1.0-theta)*h__['0']
-    
-    F_h = (w*(1./k__)*(h__['0'] - h__['1'])*dx + 
-           x_N**-1.0*(
-            w*q_ta.dx()*dx -
-            w*X*x_N_prime*h_ta.dx()*dx
-            )
+def F_h(q, h, k, x_N, x_N_prime):    
+
+    F_h = (w*(1./k)*(h['0'] - h['1'])*dx + 
+           w/x_N['0']*(
+            ta(q).dx() -
+            X*x_N_prime['0']*ta(h).dx()
+            )*dx
            )
 
     return F_h
 
-def F_psi(q__, h__, psi__, k__):
-    q_ta = theta*q__['1']+(1.0-theta)*q__['0']
-    h_ta = theta*h__['1']+(1.0-theta)*h__['0']
-    psi_ta = theta*psi__['1']+(1.0-theta)*psi__['0']
-    
-    F_psi = (z*(1./k__)*(psi__['0'] - psi__['1'])*dx +
-             x_N**-1.0*(
-              z*(q_ta*psi_ta*h_ta**-1.0).dx()*dx -
-              z*X*x_N_prime*psi_ta.dx()*dx
-              ) + 
-             z*beta*psi_ta*h_ta**-1.0*dx
+def F_psi(q, h, psi, k, x_N, x_N_prime):
+
+    F_psi = (z*(1./k)*(psi['0'] - psi['1'])*dx +
+             z/x_N['0']*(
+              (ta(q)*ta(psi)*ta(h)**-1.0).dx() -
+              X*x_N_prime['0']*ta(psi).dx()
+              )*dx + 
+             z*beta*ta(psi)*ta(h)**-1.0*dx
              )
 
     return F_psi
@@ -198,43 +194,57 @@ while t < T*t_nd:
     
     while nl_it < nl_its:
 
-        # Compute velocity
-        if print_progress:
-            info_blue('Computing velocity')
-        solve(F_q(q_, h_, psi_, k, False) == 0, q_['0'], bcq)
-
         # Compute height
         if print_progress:
             info_blue('Computing current height')
-        solve(F_h(q_, h_, k) == 0, h_['0'])
+        solve(F_h(q_, h_, k, x_N_, x_N_prime_) == 0, h_['0'])
 
-        # Compute concentration
+        # Compute velocity
         if print_progress:
-            info_blue('Computing current concentration')
-        solve(F_psi(q_, h_, psi_, k) == 0, psi_['0'])
+            info_blue('Computing velocity')
+        solve(F_q(q_, h_, psi_, k, x_N_, x_N_prime_) == 0, q_['0'], bcq)
+
+        # # Compute concentration
+        # if print_progress:
+        #     info_blue('Computing current concentration')
+        # solve(F_psi(q_, h_, psi_, k, x_N_, x_N_prime_) == 0, psi_['0'])
 
         nl_it += 1
-
-    if t > t_store:
-        q_file << q_['0']
-        h_file << h_['0']
-        psi_file << psi_['0']
-        t_store += dt_store
     
     # Store values for next timestep
     q_['1'].assign(q_['0'])
     h_['1'].assign(h_['0'])
     psi_['1'].assign(psi_['0'])
-
-    plot(h_['0'], rescale=False)
     
-    x_N_prime_ = q_['0'].vector().array()[-1]/h_['0'].vector().array()[-1]
-    x_N_ = x_N_ + x_N_prime_*timestep
-    x_N = Constant(x_N_)
-    x_N_prime = Constant(x_N_prime_)  
+    x_N_prime = q_['0'].vector().array()[-1]/h_['0'].vector().array()[-1]
+    x_N = x_N + x_N_prime*timestep
+    x_N_['1'] = x_N_['0']
+    x_N_prime_['1'] = x_N_prime_['0']
+    x_N_['0'] = Constant(x_N)
+    x_N_prime_['0'] = Constant(x_N_prime)  
+
+    nose.psi = psi_['0'].vector().array()[-1]
+    nose.h = h_['0'].vector().array()[-1]
+
+    q_N = np.array([0.0])
+    nose.eval(q_N, np.array([x_N, 0.0]))
+    u_N = (q_N/h_['0'].vector().array()[-1])/u_nd
 
     t += timestep
-    info_green("t = %.5f, timestep = %.2e" % (t/t_nd, timestep/t_nd))
+    info_green("t = %.5f, timestep = %.2e, x_N = %.2e, u_N = %.2e, psi_N = %.2e, h_N = %.2e" % 
+               (t/t_nd, timestep/t_nd, x_N*x_lg, u_N, psi_['0'].vector().array()[-1], h_['0'].vector().array()[-1]))
+
+    u.vector()[:] = (q_['0'].vector().array()/h_['0'].vector().array())/u_nd
+    h_d.vector()[:] = h_['0'].vector().array()/l_nd
+    phi.vector()[:] = (psi_['0'].vector().array()/h_['0'].vector().array())*phi_0
+
+    plot(h_d, rescale=False)    
+
+    if t > t_store:
+        u_file << u
+        h_file << h_d
+        phi_file << phi
+        t_store += dt_store
 
 list_timings()
 timer.stop()
