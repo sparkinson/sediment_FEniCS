@@ -39,7 +39,7 @@ dt_store = 1e-1
 # time-loop
 min_dt = 1e-2
 max_dt = 1e-1
-T = 2.0
+T = 15.0
 CFL = 0.5
 nl_its = 1
 picard_its = 2
@@ -48,13 +48,13 @@ theta = 0.5
 adams_bashforth = False
 
 # mesh
-dX = 1e-2
+dX = 1.0e-2
 L = 1.0
 
 # stabilisation
-nu_scale_u_ = 0.05
+nu_scale_u_ = 0.00
 nu_scale_c_ = 0.20
-stabilise_u = True
+stabilise_u = False
 optimal_beta = False
 
 # sediment
@@ -68,10 +68,10 @@ u_sink_ = 5.5e-4
 nu_ = 1e-4
 
 # save files
-u_file = File("results/u.pvd") 
-p_file = File("results/p.pvd") 
-c_file = File("results/c.pvd")
-c_d_file = File("results/c_d.pvd")
+u_file = File("results/u_nu-4.pvd") 
+p_file = File("results/p_nu-4.pvd") 
+c_file = File("results/c_nu-4.pvd")
+c_d_file = File("results/c_d_nu-4.pvd")
 
 ############################################################
 # INITIALISE DEPENDENT PARAMETERS
@@ -469,7 +469,7 @@ while t < T:
 
     ############################################################
     # Adaptive time step
-    dt = np.ma.fix_invalid(0.5*dX/abs(u_['0'].vector().array()))
+    dt = np.ma.fix_invalid(dX/abs(u_['0'].vector().array()))
     dt = MPI.min(CFL*dt.min())
     dt = max(dt, min_dt)
     dt = min(dt, max_dt)
