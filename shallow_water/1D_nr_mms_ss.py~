@@ -1,0 +1,88 @@
+from dolfin import *
+from dolfin_tools import *
+import mms_strings as mms
+import numpy as np
+
+############################################################
+# DOLFIN SETTINGS
+
+parameters["linear_algebra_backend"]             = "PETSc"
+parameters["form_compiler"]["cpp_optimize"]      = True
+parameters["form_compiler"]["quadrature_degree"] = 8
+parameters["std_out_all_processes"]              = False;
+
+# show information
+print_time = True
+print_progress = True
+info(parameters, True)
+set_log_active(True)
+
+############################################################
+# SIMULATION USER DEFINED PARAMETERS
+
+# function spaces
+shape_Q = 1
+shape_H = 1
+shape_W = shape_Q*shape_H
+
+# mesh
+dX = 1e-2
+L = 1.0
+
+############################################################
+# INITIALISE DEPENDENT PARAMETERS
+
+# mms solutions
+u_s = Expression(mms.u_s(), degree = shape_Q + 1)
+h_s = Expression(mms.h_s(), degree = shape_H + 1)
+q_s = Expression(mms.q_s(), degree = shape_Q + 1)
+
+# mms source terms
+Sh = Expression(mms.Sh_s(), degree = shape_H + 1)
+Sq = Expression(mms.Sq_s(), degree = shape_Q + 1)
+
+############################################################
+# generate geometry
+
+mesh = Interval(int(L/dX), 0.0, L)
+
+############################################################
+# generate function spaces
+
+V = FunctionSpace(mesh, "CG", shape_Q)
+W = FunctionSpace(mesh, "CG", shape_H)
+v = TestFunction(V)
+w = TestFunction(W)
+
+############################################################
+# generate functions
+
+# non-dimensional
+q_ = dict([[i, interpolate(q_s, V)] for i in range(2)])
+h_ = dict([[i, interpolate(h_s, W)] for i in range(2)])
+psi_ = dict([[i, interpolate(psi_s, Z)] for i in range(2)])
+X = Function(V)
+X.vector()[:] = mesh.coordinates()[:,0]
+
+# functional
+u = Function(V)
+
+############################################################
+# define dirichlet boundary conditions
+
+bcq  = [DirichletBC(V, q_s, "near(x[0], 0.0) || near(x[0], 1.0)")]
+bch  = [DirichletBC(W, h_s, "near(x[0], 0.0) || near(x[0], 1.0)")]
+
+############################################################
+# store initial conditions
+
+u.vector()[:] = q_[0].vector().array()/h_[0].vector().array()
+
+list_timings()
+timer = Timer("run time") 
+
+############################################################
+# define equations to be solved
+
+def ta(vals):
+    return theta*vals[1]+(1.0-theta)*vals[0]

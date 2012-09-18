@@ -142,6 +142,17 @@ timer = Timer("run time")
 def ta(vals):
     return theta*vals[1]+(1.0-theta)*vals[0]
 
+def F_h(q, h, k, x_N, x_N_prime):   
+
+    F_h = (w*(1./k)*(h[0] - h[1])*dx + 
+           w/x_N[0]* 
+            (ta(q).dx()
+            - X*x_N_prime[0]*ta(h).dx()
+            )*dx
+           )
+
+    return F_h
+
 def F_q(q, h, phi, k, x_N, x_N_prime):
 
     psi = ta(phi)*ta(h)
@@ -154,17 +165,6 @@ def F_q(q, h, phi, k, x_N, x_N_prime):
            )
 
     return F_q
-
-def F_h(q, h, k, x_N, x_N_prime):   
-
-    F_h = (w*(1./k)*(h[0] - h[1])*dx + 
-           w/x_N[0]*
-            (ta(q).dx()
-            - X*x_N_prime[0]*ta(h).dx()
-            )*dx
-           )
-
-    return F_h
 
 def F_phi(q, h, phi, k, x_N, x_N_prime):
 
