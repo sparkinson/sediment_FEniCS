@@ -34,10 +34,10 @@ td = time_discretisation()
 # SIMULATION USER DEFINED PARAMETERS
 
 # function spaces
-shape = 2
+shape = 1
 
 # mesh
-dX_ = 5e-2
+dX_ = 1e-2
 L = 1.0
 
 # save files
@@ -129,7 +129,7 @@ timestep = 1./5000.
 
 plot_x = np.linspace(0.0, 6.0, 1201)
 plt.ion()
-fig = plt.figure(figsize=(24, 12), dpi=50)
+fig = plt.figure(figsize=(24, 6), dpi=50)
 vel_plot = fig.add_subplot(211)
 h_plot = fig.add_subplot(212)
 vel_plot.set_autoscaley_on(False)
@@ -179,7 +179,7 @@ while (True):
         # stabilisation
         u = q_td/h_td
         alpha = b*dX*(abs(u)+u+h_td**0.5)*h_td
-        F_q = F_q - v*grad((alpha*grad(u)))*k*dx
+        F_q = F_q + grad(v)*alpha*grad(u)*k*dx
 
         dF = derivative(F_q, q[0])
         pde = NonlinearVariationalProblem(F_q, q[0], bcq, dF)
@@ -214,9 +214,12 @@ while (True):
 
         nl_its += 1
 
-    t1 = 1./(5*((q[0].vector().array()/h[0].vector().array())/(x_N_*dX_)).max())
-    t2 = 1./(5*(np.abs(h[0].vector().array() - h[1].vector().array())/(x_N_*dX_*timestep)).max())
-    print t1, t2
+    DH = np.abs(h[0].vector().array() - h[1].vector().array()).max()/timestep
+    DX = (q[0].vector().array()/h[0].vector().array()).max()
+    CFL = 10.0
+    t1 = CFL*(x_N_*dX_)/DH
+    t2 = CFL*(h[0].vector().array().max()*dX_)/DX
+    # info_red("%.2e, %.2e, %.2e, %.2e" % (t1, t2, DH, DX))
     timestep = min(t1, t2, 0.1, timestep + 0.05*timestep)
 
     h[1].assign(h[0])
