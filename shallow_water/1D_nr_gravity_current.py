@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 # DOLFIN SETTINGS
 
 info(parameters, False)
-set_log_active(True)
+set_log_active(False)
 
 ############################################################
 # TIME DISCRETISATION
@@ -37,7 +37,7 @@ td = time_discretisation()
 shape = 2
 
 # mesh
-dX_ = 1e-2
+dX_ = 5e-2
 L = 1.0
 
 # save files
@@ -122,7 +122,7 @@ bch = []
 ############################################################
 # EQUATIONS (done each timestep)
 
-timestep = 1./500.
+timestep = 1./5000.
 
 ############################################################
 # PLOTTING STUFF
@@ -134,7 +134,7 @@ vel_plot = fig.add_subplot(211)
 h_plot = fig.add_subplot(212)
 vel_plot.set_autoscaley_on(False)
 vel_plot.set_ylim([-0.1,0.4])
-plot_freq = 0.01
+plot_freq = 0.1
 
 def y_data(u):
     val_x = np.linspace(0.0, x_N_, L/dX_ + 1)
@@ -163,7 +163,7 @@ while (True):
 
     ss = 1.0
     nl_its = 0
-    while (ss > 1e-3):
+    while (nl_its < 2 or ss > 1e-3):
 
         h_nl = h[0].copy(deepcopy=True)
         q_nl = q[0].copy(deepcopy=True)
@@ -179,7 +179,7 @@ while (True):
         # stabilisation
         u = q_td/h_td
         alpha = b*dX*(abs(u)+u+h_td**0.5)*h_td
-        F_q = F_q - v*1./x_N_td*grad((alpha*grad(u)))*k*dx
+        F_q = F_q - v*grad((alpha*grad(u)))*k*dx
 
         dF = derivative(F_q, q[0])
         pde = NonlinearVariationalProblem(F_q, q[0], bcq, dF)
@@ -210,26 +210,26 @@ while (True):
         dh = errornorm(h_nl, h[0], norm_type="L2", degree=shape + 1)
         dq = errornorm(q_nl, q[0], norm_type="L2", degree=shape + 1)
         ss = max(dh, dq)
-        print ss
+        # print ss
 
         nl_its += 1
+
+    t1 = 1./(5*((q[0].vector().array()/h[0].vector().array())/(x_N_*dX_)).max())
+    t2 = 1./(5*(np.abs(h[0].vector().array() - h[1].vector().array())/(x_N_*dX_*timestep)).max())
+    print t1, t2
+    timestep = min(t1, t2, 0.1, timestep + 0.05*timestep)
 
     h[1].assign(h[0])
     q[1].assign(q[0])
     x_N[1].assign(x_N[0])
     u_N[1].assign(u_N[0])
 
-    t1 = 1./(10*((q[0].vector().array()/h[0].vector().array())/(x_N_*dX_)).max())
-    t2 = 1./(10*(np.abs(h[0].vector().array() - h[1].vector().array())/(x_N_*dX_)).max())
-    timestep = min(t1, t2)
-
+    vel_line.set_ydata(y_data(q[0].vector().array()/h[0].vector().array()))
+    h_line.set_ydata(y_data(h[0].vector().array()))
+    fig.canvas.draw()
     if t > plot_t:
-        vel_line.set_ydata(y_data(q[0].vector().array()/h[0].vector().array()))
-        h_line.set_ydata(y_data(h[0].vector().array()))
-        fig.canvas.draw()
         fig.savefig('results/%06.2f.png' % (t))
         plot_t += plot_freq
-
         info_blue("plotted")
 
     # plot(q[0], rescale=False)
