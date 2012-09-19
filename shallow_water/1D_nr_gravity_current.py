@@ -163,7 +163,7 @@ while (True):
 
     ss = 1.0
     nl_its = 0
-    while (ss > 1e-4):
+    while (ss > 1e-3):
 
         h_nl = h[0].copy(deepcopy=True)
         q_nl = q[0].copy(deepcopy=True)
@@ -219,7 +219,9 @@ while (True):
     x_N[1].assign(x_N[0])
     u_N[1].assign(u_N[0])
 
-    timestep = 1./(10*((q[0].vector().array()/h[0].vector().array())/(x_N_*dX_)).max())
+    t1 = 1./(10*((q[0].vector().array()/h[0].vector().array())/(x_N_*dX_)).max())
+    t2 = 1./(10*(np.abs(h[0].vector().array() - h[1].vector().array())/(x_N_*dX_)).max())
+    timestep = min(t1, t2)
 
     if t > plot_t:
         vel_line.set_ydata(y_data(q[0].vector().array()/h[0].vector().array()))
