@@ -184,17 +184,17 @@ while (True):
         dF = derivative(F_q, q[0])
         pde = NonlinearVariationalProblem(F_q, q[0], bcq, dF)
         solver = NonlinearVariationalSolver(pde)
-        solver.parameters["newton_solver"]["maximum_iterations"] = 1000
+        solver.parameters["newton_solver"]["maximum_iterations"] = 100
         solver.parameters["newton_solver"]["relaxation_parameter"] = 1.0
-        solver.parameters["newton_solver"]["error_on_nonconvergence"] = False
+        solver.parameters["newton_solver"]["error_on_nonconvergence"] = True
         solver.solve()
 
         dF = derivative(F_h, h[0])
         pde = NonlinearVariationalProblem(F_h, h[0], bch, dF)
         solver = NonlinearVariationalSolver(pde)
-        solver.parameters["newton_solver"]["maximum_iterations"] = 1000
+        solver.parameters["newton_solver"]["maximum_iterations"] = 100
         solver.parameters["newton_solver"]["relaxation_parameter"] = 1.0
-        solver.parameters["newton_solver"]["error_on_nonconvergence"] = False
+        solver.parameters["newton_solver"]["error_on_nonconvergence"] = True
         solver.solve()
 
         # solve(F_q == 0.0, q[0], bcq)
