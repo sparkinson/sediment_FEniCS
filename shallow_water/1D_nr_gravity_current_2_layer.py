@@ -51,6 +51,7 @@ b_ = 0.3
 # current size
 phi_ = 9.81*0.0077
 h_0 = 0.4
+H_ = 0.5
 x_N_ = 0.2
 
 ############################################################
@@ -74,6 +75,7 @@ class initial_condition(Expression):
 h_s = initial_condition()
 phi = Constant(phi_)
 b = Constant(b_)
+H = Constant(H_)
 
 ############################################################
 # GEOMETRY
@@ -99,7 +101,7 @@ q = dict([[i, Function(Q)] for i in range(2)])
 z = TestFunction(Q)
 
 X = interpolate(Expression('x[0]'), Q)
-
+ 
 ############################################################
 # BC's
 
@@ -113,7 +115,7 @@ X = interpolate(Expression('x[0]'), Q)
 # bch  = [DirichletBC(Q, h_s, "on_boundary")]
 
 no_slip = Expression('0.0', degree = shape + 1)
-nose = Expression('Fr*pow(phi*h,0.5)*h', Fr = 1.19, phi = phi_, h = h_0, degree = shape + 1)
+nose = Expression('Fr*phi*h', Fr = 0.5*(h_0/H_)**-0.5, phi = phi_, h = h_0, degree = shape + 1)
 bcq  = [DirichletBC(Q, no_slip, "near(x[0], 0.0)"),
         DirichletBC(Q, nose, "near(x[0], 1.0)")]
 bch = []
@@ -173,7 +175,10 @@ while (True):
         q_td = td.calc(q)
 
         F_h = v*(x_N[0]*h[0] - x_N[1]*h[1])*dx + v*grad(q_td)*k*dx - v*X*u_N_td*grad(h_td)*k*dx
-        F_q = z*(x_N[0]*q[0] - x_N[1]*q[1])*dx + z*grad(q_td**2.0/h_td + 0.5*phi*h_td**2.0)*k*dx - v*X*u_N_td*grad(q_td)*k*dx
+        F_q = z*(x_N[0]*q[0] - x_N[1]*q[1])*dx \
+            + (H - h_td)*z*grad(q_td**2.0/h_td + 0.5*phi*h_td**2.0)*k*dx \
+            + h_td*z*grad(q_td*(H - h_td))*k*dx \
+            - v*X*u_N_td*grad(q_td)*k*dx
 
         # stabilisation
         u = q_td/h_td
@@ -200,6 +205,7 @@ while (True):
         # solve(F_h == 0.0, h[0])
 
         nose.h = h[0].vector().array()[-1]
+        nose.Fr = 0.5*(h[0].vector().array()[-1]/H_)**-0.5
         q_N_ = nose(Point(1.0))
         u_N_ = q_N_/h[0].vector().array()[-1]
         x_N_ = x_N_ + u_N_*timestep
@@ -215,7 +221,7 @@ while (True):
 
     DH = np.abs(h[0].vector().array() - h[1].vector().array()).max()/timestep
     DX = (q[0].vector().array()/h[0].vector().array()).max()
-    CFL = 10.0
+    CFL = 1.0
     t1 = CFL*(x_N_*dX_)/DH
     t2 = CFL*(h[0].vector().array().max()*dX_)/DX
     # info_red("%.2e, %.2e, %.2e, %.2e" % (t1, t2, DH, DX))
