@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 import sys
 from dolfin import *
 from dolfin_tools import *
@@ -38,46 +40,45 @@ td = time_discretisation()
 shape = 1
 
 # mesh
-dX_ = 2e-2
+dX_ = 5e-2
 L = 1.0
-
-# save files
-dt_store = 1e-1
-q_file = File("results/q.pvd") 
-h_file = File("results/h.pvd") 
 
 # stabilisation
 b_ = 0.3
 
 # current properties
-g_prime_ = 0.81 # 9.81*0.0077
-h_0 = 20.0
-x_N_ = 10.0
+# g_prime_ = 0.81 # 9.81*0.0077
+c_0 = 0.00349
+rho_R_ = 1.717
+h_0 = 0.4
+x_N_ = 0.2
 Fr_ = 1.19
+g_ = 9.81
+u_sink_ = 1e-3
 
 # time step
-timestep = 1.0e-2 #1./1000.
+timestep = 5.0e-2 #1./1000.
 
 ############################################################
 # OTHER PARAMETERS
 
 dX = Constant(dX_)
 
-# x_N_ = dict([[i, x_N__] for i in range(2)])
-# u_N_ = dict([[i, 0.0] for i in range(2)])
-# x_N = dict([[i, Constant(x_N_[i])] for i in range(2)])
-# u_N = dict([[i, Constant(u_N_[i])] for i in range(2)])
-# q_N = np.array([0.0], dtype='d')
-
 class initial_condition(Expression):
-    def eval(self, value, x):
-        value[0] = h_0
+    def __init__(self, val):
+        self.val = val
 
-h_s = initial_condition()
+    def eval(self, value, x):
+        value[0] = self.val
+
+h_s = initial_condition(h_0)
+phi_s = initial_condition(c_0*rho_R_*g_*h_0)
 x_N_s = Expression(str(x_N_))
-g_prime = Constant(g_prime_)
+g = Constant(g_)
+rho_R = Constant(rho_R_)
 b = Constant(b_)
 Fr = Constant(Fr_)
+u_sink = Constant(u_sink_)
 
 ############################################################
 # GEOMETRY
@@ -94,6 +95,8 @@ v = TestFunction(Q)
 r = TestFunction(R)
 
 h = dict([[i, interpolate(h_s, Q)] for i in range(2)])
+phi = dict([[i, interpolate(phi_s, Q)] for i in range(2)])
+c_d = dict([[i, Function(Q)] for i in range(2)])
 q = dict([[i, Function(Q)] for i in range(2)])
 x_N = dict([[i, project(x_N_s, R)] for i in range(2)])
 u_N = dict([[i, Function(R)] for i in range(2)])
@@ -103,12 +106,8 @@ X = interpolate(Expression('x[0]'), Q)
 ############################################################
 # BC's
 
-no_slip = Expression('0.0', degree = shape + 1)
-# nose = Expression('Fr*pow(g_prime*h, 0.5)*h', Fr = 1.19, g_prime = g_prime_, h = h_0, degree = shape + 1)
-# bcq  = [DirichletBC(Q, no_slip, "near(x[0], 0.0) && on_boundary"),
-#         DirichletBC(Q, nose, "near(x[0], 1.0) && on_boundary")]
-bcq = []
-bch = []
+bcq = [DirichletBC(Q, '0.0', "near(x[0], 0.0) && on_boundary")]
+bcc_d = [DirichletBC(Q, '0.0', "near(x[0], 1.0) && on_boundary")]
 
 # left boundary marked as 0, right as 1
 class LeftBoundary(SubDomain):
@@ -125,15 +124,21 @@ ds = Measure("ds")[exterior_facet_domains]
 ############################################################
 # PLOTTING STUFF
 
-plot_x = np.linspace(0.0, 100.0, 10001)
+plot_x = np.linspace(0.0, 2.0, 10001)
 plt.ion()
-fig = plt.figure(figsize=(26, 5), dpi=50)
-vel_plot = fig.add_subplot(211)
-h_plot = fig.add_subplot(212)
+fig = plt.figure(figsize=(8, 6), dpi=200)
+vel_plot = fig.add_subplot(311)
+h_plot = fig.add_subplot(312)
+# c_plot = fig.add_subplot(413)
+c_d_plot = fig.add_subplot(313)
 h_plot.set_autoscaley_on(False)
-h_plot.set_ylim([0.0,25.0])
+h_plot.set_ylim([0.0,0.5])
 vel_plot.set_autoscaley_on(False)
-vel_plot.set_ylim([0.0,5.0])
+vel_plot.set_ylim([0.0,0.2])
+# c_plot.set_autoscaley_on(False)
+# c_plot.set_ylim([0.0,0.005])
+c_d_plot.set_autoscaley_on(False)
+c_d_plot.set_ylim([0.0,1.2e-4])
 plot_freq = 100000.0
 
 def y_data(u):
@@ -143,10 +148,10 @@ def y_data(u):
 
 vel_line, = vel_plot.plot(plot_x, y_data(q[0].vector().array()/h[0].vector().array()), 'r-')
 h_line, = h_plot.plot(plot_x, y_data(h[0].vector().array()), 'r-')
+# c_line, = c_plot.plot(plot_x, y_data(phi[0].vector().array()/(rho_R_*g_*h[0].vector().array())), 'r-')
+c_d_line, = c_d_plot.plot(plot_x, y_data(c_d[0].vector().array()), 'r-')
 fig.canvas.draw()
 fig.savefig('results/%06.2f.png' % (0.0))
-
-plot_t = plot_freq
     
 t = 0.0
 while (True):
@@ -157,11 +162,9 @@ while (True):
     nl_its = 0
     while (nl_its < 2 or ss > 1e-4):
 
-        # # DIAGNOSTICS
-        # nose.h = h[0].vector().array()[-1]
-
         # VALUES FOR CONVERGENCE TEST
         h_nl = h[0].copy(deepcopy=True)
+        phi_nl = phi[0].copy(deepcopy=True)
         q_nl = q[0].copy(deepcopy=True)
         x_N_nl = x_N[0].copy(deepcopy=True)
 
@@ -171,22 +174,15 @@ while (True):
         inv_x_N = 1./x_N_td
         u_N_td = td.calc(u_N)
         h_td = td.calc(h)
+        phi_td = td.calc(phi)
+        c_d_td = td.calc(c_d)
         q_td = td.calc(q)
 
         # momentum
-        # F_q = v*(q[0] - q[1])*dx + \
-        #     inv_x_N*v*grad(q_td**2.0/h_td + 0.5*g_prime*h_td**2.0)*k*dx - \
-        #     inv_x_N*v*X*u_N_td*grad(q_td)*k*dx
-        # u_N = Fr*(g_prime*h_td)**0.5
-        F_q = (v*(q[0] - q[1])*dx +
-               inv_x_N*grad(v*X)*u_N_td*q_td*k*dx +
-               inv_x_N*v*grad(q_td**2.0/h_td + 0.5*g_prime*h_td**2.0)*k*dx -
-               inv_x_N*v*X*u_N_td**2.0*h_td*n*k*ds(1))
-        # F_q = (v*(q[0] - q[1])*dx -
-        #        inv_x_N*grad(v)*(q_td**2.0/h_td + 0.5*g_prime*h_td**2.0)*k*dx +
-        #        inv_x_N*v*(0.5*g_prime*h_td**2.0)*n*k*ds(0) +
-        #        inv_x_N*v*((-1.0*h_td)**2.0/h_td + 0.5*g_prime*h_td**2.0)*n*k*ds(1) - 
-        #        inv_x_N*v*X*u_N_td*grad(q_td)*k*dx)
+        F_q = v*(q[0] - q[1])*dx + \
+            inv_x_N*grad(v*X)*u_N_td*q_td*k*dx + \
+            inv_x_N*v*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*k*dx - \
+            inv_x_N*v*X*u_N_td**2.0*h_td*n*k*ds(1)
         # momentum stabilisation
         u = q_td/h_td
         alpha = b*dX*(abs(u)+u+h_td**0.5)*h_td
@@ -197,8 +193,19 @@ while (True):
             inv_x_N*v*grad(q_td)*k*dx - \
             inv_x_N*v*X*u_N_td*grad(h_td)*k*dx
 
+        # deposition
+        F_phi = v*(phi[0] - phi[1])*dx + \
+            inv_x_N*v*grad(q_td*phi_td/h_td)*k*dx - \
+            inv_x_N*v*X*u_N_td*grad(phi_td)*k*dx + \
+            v*u_sink*phi_td/h_td*k*dx
+
+        # deposit
+        F_c_d = v*(c_d[0] - c_d[1])*dx - \
+            inv_x_N*v*X*u_N_td*grad(c_d_td)*k*dx - \
+            v*u_sink*phi_td/(rho_R*g*h_td)*k*dx
+
         # nose location/speed
-        F_u_N = r*(Fr*(g_prime*h_td)**0.5)*ds(1) - r*u_N[0]*ds(1)
+        F_u_N = r*(Fr*(phi_td)**0.5)*ds(1) - r*u_N[0]*ds(1)
         F_x_N = r*(x_N[0] - x_N[1])*dx - r*u_N_td*k*dx
 
         # SOLVE EQUATIONS
@@ -210,44 +217,33 @@ while (True):
         solver.parameters["newton_solver"]["error_on_nonconvergence"] = True
         solver.solve()
 
-        dF = derivative(F_h, h[0])
-        pde = NonlinearVariationalProblem(F_h, h[0], bch, dF)
-        solver = NonlinearVariationalSolver(pde)
-        solver.parameters["newton_solver"]["maximum_iterations"] = 100
-        solver.parameters["newton_solver"]["relaxation_parameter"] = 1.0
-        solver.parameters["newton_solver"]["error_on_nonconvergence"] = True
-        solver.solve()
-
+        solve(F_h == 0, h[0])
+        solve(F_phi == 0, phi[0])
+        solve(F_c_d == 0, c_d[0], bcc_d)
         solve(F_u_N == 0, u_N[0])
         solve(F_x_N == 0, x_N[0])
         
         dh = errornorm(h_nl, h[0], norm_type="L2", degree=shape + 1)
+        dphi = errornorm(phi_nl, phi[0], norm_type="L2", degree=shape + 1)
         dq = errornorm(q_nl, q[0], norm_type="L2", degree=shape + 1)
         dx_N = errornorm(x_N_nl, x_N[0], norm_type="L2", degree=shape + 1)
-        ss = max(dh, dq, dx_N)
+        ss = max(dh, dphi, dq, dx_N)
 
         nl_its += 1
 
-    # DH = np.abs(h[0].vector().array() - h[1].vector().array()).max()/timestep
-    # DX = (q[0].vector().array()/h[0].vector().array()).max()
-    # CFL = 0.5
-    # t1 = 10000.0 # CFL*(h[0].vector().array().max()*dX_)/DH
-    # t2 = CFL*(x_N_[0]*dX_)/DX
-    # # info_red("%.2e, %.2e, %.2e, %.2e" % (t1, t2, DH, DX))
-    # timestep = min(t1, t2, plot_freq, timestep + 0.05*timestep)
-
     h[1].assign(h[0])
+    phi[1].assign(phi[0])
+    c_d[1].assign(c_d[0])
     q[1].assign(q[0])
     x_N[1].assign(x_N[0])
     u_N[1].assign(u_N[0])
 
     vel_line.set_ydata(y_data(q[0].vector().array()/h[0].vector().array()))
     h_line.set_ydata(y_data(h[0].vector().array()))
+    # c_line.set_ydata(y_data(phi[0].vector().array()/(rho_R_*g_*h[0].vector().array())))
+    c_d_line.set_ydata(y_data(c_d[0].vector().array()))
     fig.canvas.draw()
-    if t > plot_t:
-        fig.savefig('results/%06.2f.png' % (t))
-        plot_t += plot_freq
-        info_blue("plotted")
+    fig.savefig('results/{:06.2f}.png'.format(t))
 
     mass = (h[0].vector().array()[:L/dX_ + 1]*(x_N[0].vector().array()[-1]*dX_)).sum()
     info_green("t = %.2e, timestep = %.2e, x_N = %.2e, u_N = %.2e, u_N_2 = %.2e, h_N = %.2e, nl_its = %1d, mass = %.2e" % 
@@ -258,3 +254,4 @@ while (True):
                 h[0].vector().array()[-1],
                 nl_its, 
                 mass))
+    # info_red(c_d[0].vector().array().max())
