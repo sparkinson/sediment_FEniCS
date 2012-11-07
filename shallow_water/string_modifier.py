@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 import sys
 file_in = sys.argv[1]
 # file_out = sys.argv[2]
@@ -25,6 +27,15 @@ for line in f_in.readlines():
                 elif line[start_pos] == ')':
                     brackets += 1
 
+        pow_size = 1
+        pow_end = pow_location + 1 + pow_size
+        while (line[pow_end] != '/' and
+               line[pow_end] != '*' and
+               line[pow_end] != ' ' and
+               line[pow_end] != '('):
+            pow_size += 1
+            pow_end += 1
+
         while (line[start_pos - 1] != '/' and
                line[start_pos - 1] != '*' and
                line[start_pos - 1] != ' ' and
@@ -34,9 +45,9 @@ for line in f_in.readlines():
         line = (line[:start_pos] + 
                 'pow(' + line[start_pos:end_pos + 1] + 
                 ', ' +
-                line[pow_location + 1] +
+                line[pow_location + 1:pow_location + pow_size + 1] +
                 ')' +
-                line[pow_location + 2:])
+                line[pow_location + pow_size + 1:])
 
     print line
     # f_out.write(line)

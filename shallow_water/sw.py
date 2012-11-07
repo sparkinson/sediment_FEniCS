@@ -3,7 +3,7 @@
 import sys
 from dolfin import *
 from dolfin_tools import *
-import mms_strings as mms
+import sw_mms_exp as mms
 import numpy as np
 import matplotlib.pyplot as plt
 plt.ion()
@@ -74,38 +74,46 @@ class Model():
                                              u_N_exp = '0.0')
 
         # define bc's
-        self.bcq = [DirichletBC(Q, '0.0', "near(x[0], 0.0) && on_boundary")]
+        self.bch = []
+        self.bcphi = []
         self.bcc_d = [DirichletBC(Q, '0.0', "near(x[0], 1.0) && on_boundary")]
+        self.bcq = [DirichletBC(Q, '0.0', "near(x[0], 0.0) && on_boundary")]
 
         # initialise plot
-        self.initialise_plot()   
+        self.initialise_plot(2.0)   
 
     def mms_setup(self, dX_):
-        mms = True
+        self.mms = True
 
         # define constants
         self.dX = Constant(dX_)
-        self.L = Constant(np.pi)
+        self.L = np.pi
         self.g = Constant(1.0)
         self.rho_R = Constant(1.0)
-        self.b = Constant(1.0)
+        self.b = Constant(1.0 / dX_)
         self.Fr = Constant(1.0)
         self.u_sink = Constant(1.0)
 
         Q = self.initialise_functions_spaces(mesh = mesh, 
-                                             h_exp = str(self.h_0), 
-                                             phi_exp = str(self.c_0*self.rho_R_*self.g_*self.h_0), 
-                                             c_d_exp = '0.0', 
-                                             q_exp = '0.0', 
-                                             x_N_exp = str(self.x_N_), 
-                                             u_N_exp = '0.0')
+                                             h_exp = mms.h(), 
+                                             phi_exp = mms.phi(),
+                                             c_d_exp = mms.c_d(), 
+                                             q_exp = mms.q(), 
+                                             x_N_exp = 'pi', 
+                                             u_N_exp = mms.u_N())
 
         # define bc's
-        self.bcq = [DirichletBC(Q, '0.0', "near(x[0], 0.0) && on_boundary")]
-        self.bcc_d = [DirichletBC(Q, '0.0', "near(x[0], 1.0) && on_boundary")]
+        self.bch = [DirichletBC(Q, Expression(mms.h()), 
+                                "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")]
+        self.bcphi = [DirichletBC(Q, Expression(mms.phi()), 
+                                  "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")]
+        self.bcc_d = [DirichletBC(Q, Expression(mms.c_d()), 
+                                  "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")]
+        self.bcq = [DirichletBC(Q, Expression(mms.q()), 
+                                "near(x[0], 0.0) && on_boundary")]
 
         # initialise plot
-        self.initialise_plot() 
+        self.initialise_plot(np.pi) 
 
     def initialise_functions_spaces(self, mesh, h_exp, phi_exp, c_d_exp, q_exp, x_N_exp, u_N_exp):
         # define geometry
@@ -146,15 +154,29 @@ class Model():
         val = u[:self.L/self.dX_ + 1]
         return np.interp(self.plot_x, val_x, val, right=0.0)
 
-    def solve(self, T):
+    def solve(self, T = None, tol = None):
+
+        def time_finish(t):
+            if T:
+                if t >= T:
+                    return True
+            return False
+
+        def converged(du):
+            if tol:
+                if du < tol:
+                    return True
+            return False
+
         self.t = 0.0
-        while (self.t < T):
+        du = 1e10
+        while not (time_finish(self.t) or converged(du)):
             self.t += self.timestep
             k = Constant(self.timestep)
 
             ss = 1.0
             nl_its = 0
-            while (nl_its < 2 or ss > 1e-4):
+            while (nl_its < 2 or du_nl > 1e-4):
 
                 # VALUES FOR CONVERGENCE TEST
                 h_nl = self.h[0].copy(deepcopy=True)
@@ -176,34 +198,39 @@ class Model():
                 F_q = self.v*(self.q[0] - self.q[1])*dx + \
                     inv_x_N*grad(self.v*self.X)*u_N_td*q_td*k*dx + \
                     inv_x_N*self.v*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*k*dx - \
-                    inv_x_N*self.v*self.X*u_N_td**2.0*h_td*self.n*k*self.ds(1) + \
-                    self.v*self.s_q*k*dx
+                    inv_x_N*self.v*self.X*u_N_td**2.0*h_td*self.n*k*self.ds(1) 
                 # momentum stabilisation
                 u = q_td/h_td
                 alpha = self.b*self.dX*(abs(u)+u+h_td**0.5)*h_td
                 F_q = F_q + inv_x_N*grad(self.v)*alpha*grad(u)*k*dx
+                if self.mms:
+                    F_q = F_q + self.v*mms.s_q()*k*dx
 
                 # conservation
                 F_h = self.v*(self.h[0] - self.h[1])*dx + \
                     inv_x_N*self.v*grad(q_td)*k*dx - \
-                    inv_x_N*self.v*self.X*u_N_td*grad(h_td)*k*dx + \
-                    self.v*self.s_h*k*dx
+                    inv_x_N*self.v*self.X*u_N_td*grad(h_td)*k*dx 
+                if self.mms:
+                    F_h = F_h + self.v*mms.s_h()*k*dx
 
-                # deposition
+                # concentration
                 F_phi = self.v*(self.phi[0] - self.phi[1])*dx + \
                     inv_x_N*self.v*grad(q_td*phi_td/h_td)*k*dx - \
                     inv_x_N*self.v*self.X*u_N_td*grad(phi_td)*k*dx + \
-                    self.v*self.u_sink*phi_td/h_td*k*dx + \
-                    self.v*self.s_phi*k*dx
+                    self.v*self.u_sink*phi_td/h_td*k*dx 
+                if self.mms:
+                    F_phi = F_phi + self.v*mms.s_phi()*k*dx
 
                 # deposit
                 F_c_d = self.v*(self.c_d[0] - self.c_d[1])*dx - \
                     inv_x_N*self.v*self.X*u_N_td*grad(c_d_td)*k*dx - \
                     self.v*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*k*dx
+                if self.mms:
+                    F_c_d = F_c_d + self.v*mms.s_c_d()*k*dx
 
                 # nose location/speed
                 F_u_N = self.r*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
-                    self.r*self.u_N[0]*self.ds(1) + self.r*self.s_u_N*self.ds(1)
+                    self.r*self.u_N[0]*self.ds(1) 
                 F_x_N = self.r*(self.x_N[0] - self.x_N[1])*dx - self.r*u_N_td*k*dx 
 
                 # SOLVE EQUATIONS
@@ -218,9 +245,15 @@ class Model():
                 dphi = errornorm(phi_nl, self.phi[0], norm_type="L2", degree=self.shape + 1)
                 dq = errornorm(q_nl, self.q[0], norm_type="L2", degree=self.shape + 1)
                 dx_N = errornorm(x_N_nl, self.x_N[0], norm_type="L2", degree=self.shape + 1)
-                ss = max(dh, dphi, dq, dx_N)
+                du_nl = max(dh, dphi, dq, dx_N)
 
                 nl_its += 1
+
+            dh = errornorm(self.h[0], self.h[1], norm_type="L2", degree=self.shape + 1)
+            dphi = errornorm(self.phi[0], self.phi[1], norm_type="L2", degree=self.shape + 1)
+            dq = errornorm(self.q[0], self.q[1], norm_type="L2", degree=self.shape + 1)
+            dx_N = errornorm(self.x_N[0], self.x_N[1], norm_type="L2", degree=self.shape + 1)
+            du = max(dh, dphi, dq, dx_N)
 
             self.h[1].assign(self.h[0])
             self.phi[1].assign(self.phi[0])
@@ -233,9 +266,9 @@ class Model():
             self.update_plot()
             self.print_timestep_info(nl_its)
 
-    def initialise_plot(self):
+    def initialise_plot(self, x_max):
         # fig settings
-        self.plot_x = np.linspace(0.0, 2.0, 10001)
+        self.plot_x = np.linspace(0.0, x_max, 10001)
         self.fig = plt.figure(figsize=(16, 12), dpi=50)
         self.vel_plot = self.fig.add_subplot(311)
         self. h_plot = self.fig.add_subplot(312)
@@ -289,8 +322,11 @@ class Model():
 
 if __name__ == '__main__':
     
-    model = Model()
-    model.setup()
-    model.solve(5.0)
+    # model = Model()
+    # model.setup()
+    # model.solve(T = 5.0)
 
-    # model = Model(mms = True)
+    model = Model()
+    model.mms_setup(5e-2)
+    model.solve(tol = 1e-4)
+    
