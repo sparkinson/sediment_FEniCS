@@ -7,11 +7,13 @@ import sw_mms_exp as mms
 import numpy as np
 import matplotlib.pyplot as plt
 plt.ion()
+from optparse import OptionParser
 
 ############################################################
 # DOLFIN SETTINGS
 
-info(parameters, False)
+parameters['krylov_solver']['relative_tolerance'] = 1e-15
+info(parameters, True)
 set_log_active(False)
 
 ############################################################
@@ -65,8 +67,7 @@ class Model():
         self.Fr = Constant(self.Fr_)
         self.u_sink = Constant(self.u_sink_)
         
-        Q = self.initialise_functions_spaces(mesh = mesh, 
-                                             h_exp = str(self.h_0), 
+        Q = self.initialise_functions_spaces(h_exp = str(self.h_0), 
                                              phi_exp = str(self.c_0*self.rho_R_*self.g_*self.h_0), 
                                              c_d_exp = '0.0', 
                                              q_exp = '0.0', 
@@ -82,20 +83,25 @@ class Model():
         # initialise plot
         self.initialise_plot(2.0)   
 
-    def mms_setup(self, dX_):
+    def mms_setup(self, dX_, dt):
         self.mms = True
 
         # define constants
-        self.dX = Constant(dX_)
+        self.dX_ = dX_
+        self.dX = Constant(self.dX_)
         self.L = np.pi
+        self.g_ = 1.0
         self.g = Constant(1.0)
+        self.rho_R_ = 1.0
         self.rho_R = Constant(1.0)
+        self.b_ = 1.0 / dX_
         self.b = Constant(1.0 / dX_)
+        self.Fr_ = 1.0
         self.Fr = Constant(1.0)
+        self.u_sink_ = 1.0
         self.u_sink = Constant(1.0)
 
-        Q = self.initialise_functions_spaces(mesh = mesh, 
-                                             h_exp = mms.h(), 
+        Q = self.initialise_functions_spaces(h_exp = mms.h(), 
                                              phi_exp = mms.phi(),
                                              c_d_exp = mms.c_d(), 
                                              q_exp = mms.q(), 
@@ -109,13 +115,21 @@ class Model():
                                   "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")]
         self.bcc_d = [DirichletBC(Q, Expression(mms.c_d()), 
                                   "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")]
-        self.bcq = [DirichletBC(Q, Expression(mms.q()), 
-                                "near(x[0], 0.0) && on_boundary")]
+        self.bcq = [DirichletBC(Q, Expression(mms.q()), "(near(x[0], 0.0)) && on_boundary")]
+                                # "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")]
+
+        # define source terms
+        self.s_q = Expression(mms.s_q())
+        self.s_h = Expression(mms.s_h())
+        self.s_phi = Expression(mms.s_phi())
+        self.s_c_d = Expression(mms.s_c_d())
 
         # initialise plot
-        self.initialise_plot(np.pi) 
+        self.initialise_plot(np.pi, h_y_lim = 20.0, u_y_lim = 1.5, phi_y_lim = 0.2, c_d_y_lim = 5.0) 
 
-    def initialise_functions_spaces(self, mesh, h_exp, phi_exp, c_d_exp, q_exp, x_N_exp, u_N_exp):
+        self.timestep = dt
+
+    def initialise_functions_spaces(self, h_exp, phi_exp, c_d_exp, q_exp, x_N_exp, u_N_exp):
         # define geometry
         mesh = Interval(int(self.L/self.dX_), 0.0, self.L)
         self.n = FacetNormal(mesh)
@@ -145,8 +159,8 @@ class Model():
         exterior_facet_domains = FacetFunction("uint", mesh)
         exterior_facet_domains.set_all(1)
         left_boundary.mark(exterior_facet_domains, 0)
-        self.ds = Measure("ds")[exterior_facet_domains]  
-
+        self.ds = Measure("ds")[exterior_facet_domains] 
+        
         return Q       
 
     def y_data(self, u):
@@ -154,7 +168,7 @@ class Model():
         val = u[:self.L/self.dX_ + 1]
         return np.interp(self.plot_x, val_x, val, right=0.0)
 
-    def solve(self, T = None, tol = None):
+    def solve(self, T = None, tol = None, nl_tol = 1e-5):
 
         def time_finish(t):
             if T:
@@ -176,7 +190,7 @@ class Model():
 
             ss = 1.0
             nl_its = 0
-            while (nl_its < 2 or du_nl > 1e-4):
+            while (nl_its < 2 or du_nl > nl_tol):
 
                 # VALUES FOR CONVERGENCE TEST
                 h_nl = self.h[0].copy(deepcopy=True)
@@ -195,23 +209,27 @@ class Model():
                 q_td = self.td(self.q)
 
                 # momentum
-                F_q = self.v*(self.q[0] - self.q[1])*dx + \
-                    inv_x_N*grad(self.v*self.X)*u_N_td*q_td*k*dx + \
-                    inv_x_N*self.v*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*k*dx - \
-                    inv_x_N*self.v*self.X*u_N_td**2.0*h_td*self.n*k*self.ds(1) 
-                # momentum stabilisation
+                q_N = u_N_td*h_td
                 u = q_td/h_td
-                alpha = self.b*self.dX*(abs(u)+u+h_td**0.5)*h_td
-                F_q = F_q + inv_x_N*grad(self.v)*alpha*grad(u)*k*dx
+                alpha = self.b*self.dX*(abs(u)+u+(phi_td*h_td)**0.5)*h_td
+                F_q = self.v*(self.q[0] - self.q[1])*dx + \
+                    inv_x_N*self.v*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*k*dx + \
+                    inv_x_N*u_N_td*grad(self.v*self.X)*q_td*k*dx - \
+                    inv_x_N*u_N_td*self.v*self.X*q_N*self.n*k*self.ds(1) - \
+                    inv_x_N*grad(self.v)*alpha*grad(u)*k*dx - \
+                    inv_x_N*self.v*alpha*Constant(-0.226022)*self.n*k*self.ds(1) 
+                # print self.q[1].vector().array()[-1], self.h[1].vector().array()[-1]
+                # print self.q[0].vector().array()[-1], self.h[0].vector().array()[-1]
+                # print self.q[1].vector().array()[-1]/self.h[1].vector().array()[-1]
                 if self.mms:
-                    F_q = F_q + self.v*mms.s_q()*k*dx
+                    F_q = F_q + self.v*self.s_q*k*dx
 
                 # conservation
                 F_h = self.v*(self.h[0] - self.h[1])*dx + \
                     inv_x_N*self.v*grad(q_td)*k*dx - \
                     inv_x_N*self.v*self.X*u_N_td*grad(h_td)*k*dx 
                 if self.mms:
-                    F_h = F_h + self.v*mms.s_h()*k*dx
+                    F_h = F_h + self.v*self.s_h*k*dx
 
                 # concentration
                 F_phi = self.v*(self.phi[0] - self.phi[1])*dx + \
@@ -219,33 +237,34 @@ class Model():
                     inv_x_N*self.v*self.X*u_N_td*grad(phi_td)*k*dx + \
                     self.v*self.u_sink*phi_td/h_td*k*dx 
                 if self.mms:
-                    F_phi = F_phi + self.v*mms.s_phi()*k*dx
+                    F_phi = F_phi + self.v*self.s_phi*k*dx
 
                 # deposit
                 F_c_d = self.v*(self.c_d[0] - self.c_d[1])*dx - \
                     inv_x_N*self.v*self.X*u_N_td*grad(c_d_td)*k*dx - \
                     self.v*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*k*dx
                 if self.mms:
-                    F_c_d = F_c_d + self.v*mms.s_c_d()*k*dx
+                    F_c_d = F_c_d + self.v*self.s_c_d*k*dx
 
                 # nose location/speed
                 F_u_N = self.r*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
-                    self.r*self.u_N[0]*self.ds(1) 
+                    self.r*self.u_N[0]*self.ds(1)
                 F_x_N = self.r*(self.x_N[0] - self.x_N[1])*dx - self.r*u_N_td*k*dx 
 
                 # SOLVE EQUATIONS
                 solve(F_q == 0, self.q[0], self.bcq)
-                solve(F_h == 0, self.h[0])
-                solve(F_phi == 0, self.phi[0])
+                solve(F_h == 0, self.h[0], self.bch)
+                solve(F_phi == 0, self.phi[0], self.bcphi)
                 solve(F_c_d == 0, self.c_d[0], self.bcc_d)
                 solve(F_u_N == 0, self.u_N[0])
-                solve(F_x_N == 0, self.x_N[0])
+                if not self.mms:
+                    solve(F_x_N == 0, self.x_N[0])
 
                 dh = errornorm(h_nl, self.h[0], norm_type="L2", degree=self.shape + 1)
                 dphi = errornorm(phi_nl, self.phi[0], norm_type="L2", degree=self.shape + 1)
                 dq = errornorm(q_nl, self.q[0], norm_type="L2", degree=self.shape + 1)
                 dx_N = errornorm(x_N_nl, self.x_N[0], norm_type="L2", degree=self.shape + 1)
-                du_nl = max(dh, dphi, dq, dx_N)
+                du_nl = max(dh, dphi, dq, dx_N)/self.timestep
 
                 nl_its += 1
 
@@ -253,7 +272,7 @@ class Model():
             dphi = errornorm(self.phi[0], self.phi[1], norm_type="L2", degree=self.shape + 1)
             dq = errornorm(self.q[0], self.q[1], norm_type="L2", degree=self.shape + 1)
             dx_N = errornorm(self.x_N[0], self.x_N[1], norm_type="L2", degree=self.shape + 1)
-            du = max(dh, dphi, dq, dx_N)
+            du = max(dh, dphi, dq, dx_N)/self.timestep
 
             self.h[1].assign(self.h[0])
             self.phi[1].assign(self.phi[0])
@@ -264,69 +283,124 @@ class Model():
 
             # display results
             self.update_plot()
-            self.print_timestep_info(nl_its)
+            self.print_timestep_info(nl_its, du)
 
-    def initialise_plot(self, x_max):
+    def initialise_plot(self, x_max, h_y_lim = 0.5, u_y_lim = 0.3, phi_y_lim = 0.01, c_d_y_lim = 1.2e-4):
         # fig settings
         self.plot_x = np.linspace(0.0, x_max, 10001)
         self.fig = plt.figure(figsize=(16, 12), dpi=50)
-        self.vel_plot = self.fig.add_subplot(311)
-        self. h_plot = self.fig.add_subplot(312)
-        # self.c_plot = fig.add_subplot(413)
-        self.c_d_plot = self.fig.add_subplot(313)
+        self.vel_plot = self.fig.add_subplot(411)
+        self.h_plot = self.fig.add_subplot(412)
+        self.c_plot = self.fig.add_subplot(413)
+        self.c_d_plot = self.fig.add_subplot(414)
         self.plot_freq = 100000.0
 
         # axis settings
         self.h_plot.set_autoscaley_on(False)
-        self.h_plot.set_ylim([0.0,0.5])
+        self.h_plot.set_ylim([0.0,h_y_lim])
         self.vel_plot.set_autoscaley_on(False)
-        self.vel_plot.set_ylim([0.0,0.2])
-        # self.c_plot.set_autoscaley_on(False)
-        # self.c_plot.set_ylim([0.0,0.005])
+        self.vel_plot.set_ylim([0.0,u_y_lim])
+        self.c_plot.set_autoscaley_on(False)
+        self.c_plot.set_ylim([0.0,phi_y_lim])
         self.c_d_plot.set_autoscaley_on(False)
-        self.c_d_plot.set_ylim([0.0,1.2e-4])
+        self.c_d_plot.set_ylim([0.0,c_d_y_lim])
 
         # set initial plot values
         self.vel_line, = self.vel_plot.plot(self.plot_x, 
                                             self.y_data(self.q[0].vector().array()/self.h[0].vector().array()), 'r-')
+        if self.mms:
+            self.vel_line_2, = self.vel_plot.plot(self.plot_x, 
+                                                  self.y_data(self.q[0].vector().array()/self.h[0].vector().array()), 'b-')
         self.h_line, = self.h_plot.plot(self.plot_x, 
                                         self.y_data(self.h[0].vector().array()), 'r-')
-        # self.c_line, = self.c_plot.plot(self.plot_x, 
-        #                                 self.y_data(self.phi[0].vector().array()/
-        #                                                      (self.rho_R_*self.g_*self.h[0].vector().array())
-        #                                                      ), 'r-')
+        if self.mms:
+            self.h_line_2, = self.h_plot.plot(self.plot_x, 
+                                        self.y_data(self.h[0].vector().array()), 'b-')
+        self.c_line, = self.c_plot.plot(self.plot_x, 
+                                        self.y_data(self.phi[0].vector().array()/
+                                                             (self.rho_R_*self.g_*self.h[0].vector().array())
+                                                             ), 'r-')
+        if self.mms:
+            self.c_line_2, = self.c_plot.plot(self.plot_x, 
+                                        self.y_data(self.phi[0].vector().array()/
+                                                             (self.rho_R_*self.g_*self.h[0].vector().array())
+                                                             ), 'b-')
         self.c_d_line, = self.c_d_plot.plot(self.plot_x, 
                                             self.y_data(self.c_d[0].vector().array()), 'r-')
+        if self.mms:
+            self.c_d_line_2, = self.c_d_plot.plot(self.plot_x, 
+                                            self.y_data(self.c_d[0].vector().array()), 'b-')
+
         self.fig.canvas.draw()
         self.fig.savefig('results/%06.2f.png' % (0.0))       
 
     def update_plot(self):
         self.vel_line.set_ydata(self.y_data(self.q[0].vector().array()/self.h[0].vector().array()))
         self.h_line.set_ydata(self.y_data(self.h[0].vector().array()))
-        # self.c_line.set_ydata(self.y_data(self.phi[0].vector().array()/(self.rho_R_*self.g_*self.h[0].vector().array())))
+        self.c_line.set_ydata(self.y_data(self.phi[0].vector().array()/(self.rho_R_*self.g_*self.h[0].vector().array())))
         self.c_d_line.set_ydata(self.y_data(self.c_d[0].vector().array()))
         self.fig.canvas.draw()
         self.fig.savefig('results/{:06.2f}.png'.format(self.t))   
         
-    def print_timestep_info(self, nl_its):
+    def print_timestep_info(self, nl_its, du):
         mass = (self.h[0].vector().array()[:self.L/self.dX_ + 1]*(self.x_N[0].vector().array()[-1]*self.dX_)).sum()
-        info_green("t = %.2e, timestep = %.2e, x_N = %.2e, u_N = %.2e, u_N_2 = %.2e, h_N = %.2e, nl_its = %1d, mass = %.2e" % 
+        info_green("t = %.2e, timestep = %.2e, x_N = %.2e, u_N = %.2e, u_N_2 = %.2e, h_N = %.2e, nl_its = %1d, mass = %.2e, du = %.2e" % 
                    (self.t, self.timestep, 
                     self.x_N[0].vector().array()[-1], 
                     self.u_N[0].vector().array()[0], 
                     self.q[0].vector().array()[-1]/self.h[0].vector().array()[-1], 
                     self.h[0].vector().array()[-1],
                     nl_its, 
-                    mass))
+                    mass,
+                    du))
         # info_red(self.c_d[0].vector().array().max())
 
-if __name__ == '__main__':
-    
-    # model = Model()
-    # model.setup()
-    # model.solve(T = 5.0)
+    def getError(self):
+        S_h = Expression(mms.h(), degree=self.shape + 1)
+        S_phi = Expression(mms.phi(), degree=self.shape + 1)
+        S_q = Expression(mms.q(), degree=self.shape + 1)
+        S_u_N = Expression(mms.u_N(), degree=self.shape + 1)
 
-    model = Model()
-    model.mms_setup(5e-2)
-    model.solve(tol = 1e-4)
+        Eh = errornorm(self.h[0], S_h, norm_type="L2", degree=self.shape + 1)
+        Ephi = errornorm(self.phi[0], S_phi, norm_type="L2", degree=self.shape + 1)
+        Eq = errornorm(self.q[0], S_q, norm_type="L2", degree=self.shape + 1)
+        Eu_N = errornorm(self.u_N[0], S_u_N, norm_type="L2", degree=self.shape + 1)
+
+        return Eh, Ephi, Eq, Eu_N        
+
+if __name__ == '__main__':
+
+    parser = OptionParser()
+    usage = 'usage: %prog [options]'
+    parser = OptionParser(usage=usage)
+    parser.add_option('-m', '--mms',
+                      action='store_true', dest='mms', default=False,
+                      help='mms test')
+    (options, args) = parser.parse_args()
     
+    model = Model()
+
+    if options.mms == True:
+        h = [] # element sizes
+        E = [] # errors
+        for i, nx in enumerate([8, 16, 32]):
+            dt = (pi/nx) * 0.5
+            h.append(pi/nx)
+            print 'dt is: ', dt, '; h is: ', h[-1]
+            model.mms_setup(h[-1], dt)
+            model.solve(tol = 5e-2)
+            E.append(model.getError())
+
+        # Convergence rates
+        from math import log as ln # (log is a dolfin name too)
+
+        for i in range(1, len(E)):
+            rh = ln(E[i][0]/E[i-1][0])/ln(h[i]/h[i-1])
+            rphi = ln(E[i][1]/E[i-1][1])/ln(h[i]/h[i-1])
+            rq = ln(E[i][2]/E[i-1][2])/ln(h[i]/h[i-1])
+            ru_N = ln(E[i][3]/E[i-1][3])/ln(h[i]/h[i-1])
+            print "h=%10.2E rh=%.2f rphi=%.2f rq=%.2f ru_N=%.2f Eh=%.2e Ephi=%.2e Eq=%.2e Eu_N=%.2e" % (h[i], rh, rphi, rq, ru_N, E[i][0], E[i][1], E[i][2], E[i][3]) 
+
+    else:
+        model.setup()
+        model.solve(T = 5.0)
