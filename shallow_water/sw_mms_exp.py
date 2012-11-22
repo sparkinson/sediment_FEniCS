@@ -10,6 +10,10 @@ def q():
 
     return ' pow((0.5*cos(1.4*pi) + 1.0), 0.5)*(sin(2.3*pi) + 10.0) + 1.2*sin(x[0]) '
 
+def grad_u():
+
+    return ' 1.2*cos(x[0])/(sin(2.3*x[0]) + 10.0) - (2.3*pow((0.5*cos(1.4*pi) + 1.0), 0.5)*(sin(2.3*pi) + 10.0) + 2.76*sin(x[0]))*cos(2.3*x[0])/pow((sin(2.3*x[0]) + 10.0), 2) '
+
 def c_d():
 
     return ' 1.2*sin(x[0]) + 2.0 '

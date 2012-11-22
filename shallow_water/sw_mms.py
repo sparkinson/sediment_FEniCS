@@ -15,6 +15,7 @@ u_N = phi_n**_sage_const_0p5
 q = function(u_N*h_n, _sage_const_1p2 , _sage_const_1p0 , _sage_const_0p0 , _sage_const_1p0 )
 print str(diff(q/h,x)).replace('^','**')
 q_n = function(u_N*h_n, _sage_const_1p0 , _sage_const_1p0 , _sage_const_0p0 , _sage_const_1p0 , pi)
+grad_u = diff(q/h,x)
 c_d = function(_sage_const_2p0 , _sage_const_1p2 , _sage_const_1p0 , _sage_const_0p0 , _sage_const_1p0 )
 
 s_h = _sage_const_1p /pi*(x*u_N*diff(h,x) - diff(q,x))
@@ -29,6 +30,8 @@ print "def phi():"
 print "    return '", str(phi.simplify()).replace("000000000000", "").replace("x", "x[0]").replace("y", "x[1]"), "'"
 print "def q():"
 print "    return '", str(q.simplify()).replace("000000000000", "").replace("x", "x[0]").replace("y", "x[1]"), "'"
+print "def grad_u():"
+print "    return '", str(grad_u.simplify()).replace("000000000000", "").replace("x", "x[0]").replace("y", "x[1]"), "'"
 print "def c_d():"
 print "    return '", str(c_d.simplify()).replace("000000000000", "").replace("x", "x[0]").replace("y", "x[1]"), "'"
 print "def u_N():"

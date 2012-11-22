@@ -12,6 +12,7 @@ u_N = phi_n**0.5
 q = function(u_N*h_n, 1.2, 1.0, 0.0, 1.0)
 print str(diff(q/h,x)).replace('^','**')
 q_n = function(u_N*h_n, 1.0, 1.0, 0.0, 1.0, pi)
+grad_u = diff(q/h,x)
 c_d = function(2.0, 1.2, 1.0, 0.0, 1.0)
 
 s_h = 1./pi*(x*u_N*diff(h,x) - diff(q,x))
@@ -26,6 +27,8 @@ print "def phi():"
 print "    return '", str(phi.simplify()).replace("000000000000", "").replace("x", "x[0]").replace("y", "x[1]"), "'"
 print "def q():"
 print "    return '", str(q.simplify()).replace("000000000000", "").replace("x", "x[0]").replace("y", "x[1]"), "'"
+print "def grad_u():"
+print "    return '", str(grad_u.simplify()).replace("000000000000", "").replace("x", "x[0]").replace("y", "x[1]"), "'"
 print "def c_d():"
 print "    return '", str(c_d.simplify()).replace("000000000000", "").replace("x", "x[0]").replace("y", "x[1]"), "'"
 print "def u_N():"

@@ -3,6 +3,7 @@
 import sys
 from dolfin import *
 from dolfin_tools import *
+from dolfin_adjoint import *
 import sw_mms_exp as mms
 import numpy as np
 import matplotlib.pyplot as plt
@@ -15,6 +16,9 @@ from optparse import OptionParser
 parameters['krylov_solver']['relative_tolerance'] = 1e-15
 info(parameters, True)
 set_log_active(False)
+
+dolfin.parameters["optimization"]["test_gradient"] = True
+dolfin.parameters["optimization"]["test_gradient_seed"] = 0.0001
 
 ############################################################
 # TIME DISCRETISATION FUNCTIONS
@@ -58,8 +62,11 @@ class Model():
     # mms test (default False)
     mms = False
 
-    def setup(self):
+    def setup(self, c_0 = None):
+
         # define constants
+        if c_0:
+            self.c_0 = c_0
         self.dX = Constant(self.dX_)
         self.g = Constant(self.g_)
         self.rho_R = Constant(self.rho_R_)
@@ -83,7 +90,7 @@ class Model():
         # initialise plot
         self.initialise_plot(2.0)   
 
-    def mms_setup(self, dX_, dt):
+    def mms_setup(self, dX_, dT):
         self.mms = True
 
         # define constants
@@ -127,19 +134,21 @@ class Model():
         # initialise plot
         self.initialise_plot(np.pi, h_y_lim = 20.0, u_y_lim = 1.5, phi_y_lim = 0.2, c_d_y_lim = 5.0) 
 
-        self.timestep = dt
+        self.timestep = dT
 
     def initialise_functions_spaces(self, h_exp, phi_exp, c_d_exp, q_exp, x_N_exp, u_N_exp):
         # define geometry
-        mesh = Interval(int(self.L/self.dX_), 0.0, self.L)
-        self.n = FacetNormal(mesh)
+        self.mesh = Interval(int(self.L/self.dX_), 0.0, self.L)
+        self.n = FacetNormal(self.mesh)
 
         # define function spaces
-        Q = FunctionSpace(mesh, "CG", self.shape)
-        R = FunctionSpace(mesh, "R", 0)
+        Q = FunctionSpace(self.mesh, "CG", self.shape)
+        G = FunctionSpace(self.mesh, "DG", self.shape - 1)
+        R = FunctionSpace(self.mesh, "R", 0)
         
         # define test functions
         self.v = TestFunction(Q)
+        self.z = TestFunction(G)
         self.r = TestFunction(R)
 
         # define function dictionaries for prognostic variables
@@ -156,17 +165,12 @@ class Model():
             def inside(self, x, on_boundary):
                 return x[0] < 0.5 + DOLFIN_EPS and on_boundary
         left_boundary = LeftBoundary()
-        exterior_facet_domains = FacetFunction("uint", mesh)
+        exterior_facet_domains = FacetFunction("uint", self.mesh)
         exterior_facet_domains.set_all(1)
         left_boundary.mark(exterior_facet_domains, 0)
         self.ds = Measure("ds")[exterior_facet_domains] 
         
         return Q       
-
-    def y_data(self, u):
-        val_x = np.linspace(0.0, self.x_N[0].vector().array()[-1], self.L/self.dX_ + 1)
-        val = u[:self.L/self.dX_ + 1]
-        return np.interp(self.plot_x, val_x, val, right=0.0)
 
     def solve(self, T = None, tol = None, nl_tol = 1e-5):
 
@@ -215,12 +219,10 @@ class Model():
                 F_q = self.v*(self.q[0] - self.q[1])*dx + \
                     inv_x_N*self.v*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*k*dx + \
                     inv_x_N*u_N_td*grad(self.v*self.X)*q_td*k*dx - \
-                    inv_x_N*u_N_td*self.v*self.X*q_N*self.n*k*self.ds(1) - \
+                    inv_x_N*u_N_td*self.v*self.X*q_N*self.n*k*self.ds(1) + \
                     inv_x_N*grad(self.v)*alpha*grad(u)*k*dx - \
-                    inv_x_N*self.v*alpha*Constant(-0.226022)*self.n*k*self.ds(1) 
-                # print self.q[1].vector().array()[-1], self.h[1].vector().array()[-1]
-                # print self.q[0].vector().array()[-1], self.h[0].vector().array()[-1]
-                # print self.q[1].vector().array()[-1]/self.h[1].vector().array()[-1]
+                    inv_x_N*self.v*alpha*grad(u)*self.n*k*self.ds(1) 
+                    # inv_x_N*self.v*alpha*Constant(-0.22602295050021465)*self.n*k*self.ds(1) 
                 if self.mms:
                     F_q = F_q + self.v*self.s_q*k*dx
 
@@ -340,7 +342,12 @@ class Model():
         self.c_line.set_ydata(self.y_data(self.phi[0].vector().array()/(self.rho_R_*self.g_*self.h[0].vector().array())))
         self.c_d_line.set_ydata(self.y_data(self.c_d[0].vector().array()))
         self.fig.canvas.draw()
-        self.fig.savefig('results/{:06.2f}.png'.format(self.t))   
+        self.fig.savefig('results/{:06.2f}.png'.format(self.t)) 
+
+    def y_data(self, u):
+        val_x = np.linspace(0.0, self.x_N[0].vector().array()[-1], self.L/self.dX_ + 1)
+        val = u[:self.L/self.dX_ + 1]
+        return np.interp(self.plot_x, val_x, val, right=0.0)  
         
     def print_timestep_info(self, nl_its, du):
         mass = (self.h[0].vector().array()[:self.L/self.dX_ + 1]*(self.x_N[0].vector().array()[-1]*self.dX_)).sum()
@@ -366,7 +373,7 @@ class Model():
         Eq = errornorm(self.q[0], S_q, norm_type="L2", degree=self.shape + 1)
         Eu_N = errornorm(self.u_N[0], S_u_N, norm_type="L2", degree=self.shape + 1)
 
-        return Eh, Ephi, Eq, Eu_N        
+        return Eh, Ephi, Eq, Eu_N
 
 if __name__ == '__main__':
 
@@ -383,11 +390,11 @@ if __name__ == '__main__':
     if options.mms == True:
         h = [] # element sizes
         E = [] # errors
-        for i, nx in enumerate([8, 16, 32]):
-            dt = (pi/nx) * 0.5
+        for i, nx in enumerate([32, 64, 128, 256]):
+            dT = (pi/nx) * 0.5
             h.append(pi/nx)
-            print 'dt is: ', dt, '; h is: ', h[-1]
-            model.mms_setup(h[-1], dt)
+            print 'dt is: ', dT, '; h is: ', h[-1]
+            model.mms_setup(h[-1], dT)
             model.solve(tol = 5e-2)
             E.append(model.getError())
 
@@ -403,4 +410,42 @@ if __name__ == '__main__':
 
     else:
         model.setup()
-        model.solve(T = 5.0)
+        model.solve(T = 1.0)
+
+        # deposit = model.c_d[0].vector().array()
+        # deposit_x = np.linspace(0.0, model.x_N[0].vector().array()[-1], model.L/model.dX_ + 1)
+
+        # class DepositExpression(Expression):
+        #     current_x_N = 1.0
+        #     L = 1.0
+        #     dX = 0.1
+
+        #     def __init__(target_array, target_x):
+        #         self.target = target
+        #         self.target_x = target_x
+
+        #     def eval(self, value, x):
+        #         X = x[0]*current_x_N/L
+        #         value[0] = np.interp(X, self.target_x, self.target, right=0.0)
+
+        c_d_desired = model.c_d[0].copy(deepcopy=True)
+
+        model.setup(c_0 = 0.0001)
+        model.solve(T = 1.0)
+        
+        J = Functional((model.c_d[0]-c_d_desired)*dx*dt[FINISH_TIME])
+        reduced_functional = ReducedFunctional(J, InitialConditionParameter(model.phi[0]))
+        
+        m_opt = minimize(reduced_functional, method = "L-BFGS-B")
+
+        # deposit_desired = model.c_d[0].copy(deepcopy=True)
+
+        # # left boundary marked as 0, right as 1
+        # class MeasureLocation1(SubDomain):
+        #     def inside(self, x, on_boundary):
+        #         return True if ( x[0] > 0.1 and x[0] < 0.11
+        # left_boundary = LeftBoundary()
+        # exterior_facet_domains = FacetFunction("uint", self.mesh)
+        # exterior_facet_domains.set_all(1)
+        # left_boundary.mark(exterior_facet_domains, 0)
+        # self.ds = Measure("ds")[exterior_facet_domains] 
