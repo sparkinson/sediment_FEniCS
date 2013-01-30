@@ -9,16 +9,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 plt.ion()
 from optparse import OptionParser
+import json
 
 ############################################################
 # DOLFIN SETTINGS
 
 parameters['krylov_solver']['relative_tolerance'] = 1e-15
-info(parameters, True)
-set_log_active(False)
-
-dolfin.parameters["optimization"]["test_gradient"] = True
-dolfin.parameters["optimization"]["test_gradient_seed"] = 0.0001
+dolfin.parameters["optimization"]["test_gradient"] = False
+dolfin.parameters["optimization"]["test_gradient_seed"] = 0.1
+# info(parameters, True)
+#set_log_active(False)
+set_log_level(ERROR)
 
 ############################################################
 # TIME DISCRETISATION FUNCTIONS
@@ -33,11 +34,9 @@ def forward_euler(self, u): #explicit
 class Model():
     
     # SIMULATION USER DEFINED PARAMETERS
-    # function spaces
-    shape = 1
 
     # mesh
-    dX_ = 5e-2
+    dX_ = 2.5e-2
     L = 1.0
 
     # stabilisation
@@ -54,7 +53,7 @@ class Model():
     u_sink_ = 1e-3
 
     # time step
-    timestep = 5.0e-2 #1./1000.
+    timestep = 2.0e-2
 
     # define time discretisation
     td = crank_nicholson
@@ -62,33 +61,55 @@ class Model():
     # mms test (default False)
     mms = False
 
-    def setup(self, c_0 = None):
+    # display plot
+    plot = True
+
+    def initialise_function_spaces(self):
+
+        # define geometry
+        self.mesh = Interval(int(self.L/self.dX_), 0.0, self.L)
+        self.n = FacetNormal(self.mesh)
+
+        # define function spaces
+        self.P2CG = FunctionSpace(self.mesh, "CG", 2)
+        self.P1CG = FunctionSpace(self.mesh, "CG", 1)
+        self.R = FunctionSpace(self.mesh, "R", 0)
+        
+        # define test functions
+        self.v = TestFunction(self.P1CG)
+        self.r = TestFunction(self.R)        
+
+    def setup(self, phi_ic_override = None):
 
         # define constants
-        if c_0:
-            self.c_0 = c_0
-        self.dX = Constant(self.dX_)
-        self.g = Constant(self.g_)
-        self.rho_R = Constant(self.rho_R_)
-        self.b = Constant(self.b_)
-        self.Fr = Constant(self.Fr_)
-        self.u_sink = Constant(self.u_sink_)
-        
-        Q = self.initialise_functions_spaces(h_exp = str(self.h_0), 
-                                             phi_exp = str(self.c_0*self.rho_R_*self.g_*self.h_0), 
-                                             c_d_exp = '0.0', 
-                                             q_exp = '0.0', 
-                                             x_N_exp = str(self.x_N_), 
-                                             u_N_exp = '0.0')
+        self.dX = Constant(self.dX_, name="dX")
+        self.g = Constant(self.g_, name="g")
+        self.rho_R = Constant(self.rho_R_, name="rho_R")
+        self.b = Constant(self.b_, name="b")
+        self.Fr = Constant(self.Fr_, name="Fr")
+        self.u_sink = Constant(self.u_sink_, name="u_sink")
+
+        h_ic = project(Expression(str(self.h_0)), self.P1CG)
+        if phi_ic_override:
+            self.phi_ic = phi_ic_override
+        else:
+            self.phi_ic = project(Expression(str(self.c_0*self.rho_R_*self.g_*self.h_0)), self.P1CG)
+        c_d_ic = project(Expression('0.0'), self.P1CG)
+        q_ic = project(Expression('0.0'), self.P1CG)
+        x_N_ic = project(Expression(str(self.x_N_)), self.R)
+        u_N_ic = project(Expression('0.0'), self.R)
+
+        self.initialise_functions(h_ic, c_d_ic, q_ic, x_N_ic, u_N_ic)
 
         # define bc's
         self.bch = []
         self.bcphi = []
-        self.bcc_d = [DirichletBC(Q, '0.0', "near(x[0], 1.0) && on_boundary")]
-        self.bcq = [DirichletBC(Q, '0.0', "near(x[0], 0.0) && on_boundary")]
+        self.bcc_d = [DirichletBC(self.P1CG, '0.0', "near(x[0], 1.0) && on_boundary")]
+        self.bcq = [DirichletBC(self.P1CG, '0.0', "near(x[0], 0.0) && on_boundary")]
 
         # initialise plot
-        self.initialise_plot(2.0)   
+        if self.plot:
+            self.initialise_plot(2.0)   
 
     def mms_setup(self, dX_, dT):
         self.mms = True
@@ -107,22 +128,24 @@ class Model():
         self.Fr = Constant(1.0)
         self.u_sink_ = 1.0
         self.u_sink = Constant(1.0)
+        
+        self.initialise_function_spaces()
 
-        Q = self.initialise_functions_spaces(h_exp = mms.h(), 
-                                             phi_exp = mms.phi(),
-                                             c_d_exp = mms.c_d(), 
-                                             q_exp = mms.q(), 
-                                             x_N_exp = 'pi', 
-                                             u_N_exp = mms.u_N())
+        self.initialise_functions(h_ic = project(Expression(mms.h()), self.P1CG), 
+                                  phi_ic = project(Expression(mms.phi()), self.P1CG),
+                                  c_d_ic = project(Expression(mms.c_d()), self.P1CG), 
+                                  q_ic = project(Expression(mms.q()), self.P1CG), 
+                                  x_N_ic = project(Expression('pi'), self.R), 
+                                  u_N_ic = project(Expression(mms.u_N()), self.R))
 
         # define bc's
-        self.bch = [DirichletBC(Q, Expression(mms.h()), 
+        self.bch = [DirichletBC(self.P1CG, Expression(mms.h()), 
                                 "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")]
-        self.bcphi = [DirichletBC(Q, Expression(mms.phi()), 
+        self.bcphi = [DirichletBC(self.P1CG, Expression(mms.phi()), 
                                   "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")]
-        self.bcc_d = [DirichletBC(Q, Expression(mms.c_d()), 
+        self.bcc_d = [DirichletBC(self.P1CG, Expression(mms.c_d()), 
                                   "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")]
-        self.bcq = [DirichletBC(Q, Expression(mms.q()), "(near(x[0], 0.0)) && on_boundary")]
+        self.bcq = [DirichletBC(self.P1CG, Expression(mms.q()), "(near(x[0], 0.0)) && on_boundary")]
                                 # "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")]
 
         # define source terms
@@ -132,33 +155,25 @@ class Model():
         self.s_c_d = Expression(mms.s_c_d())
 
         # initialise plot
-        self.initialise_plot(np.pi, h_y_lim = 20.0, u_y_lim = 1.5, phi_y_lim = 0.2, c_d_y_lim = 5.0) 
+        if self.plot:
+            self.initialise_plot(np.pi, h_y_lim = 20.0, u_y_lim = 1.5, phi_y_lim = 0.2, c_d_y_lim = 5.0) 
 
         self.timestep = dT
 
-    def initialise_functions_spaces(self, h_exp, phi_exp, c_d_exp, q_exp, x_N_exp, u_N_exp):
-        # define geometry
-        self.mesh = Interval(int(self.L/self.dX_), 0.0, self.L)
-        self.n = FacetNormal(self.mesh)
-
-        # define function spaces
-        Q = FunctionSpace(self.mesh, "CG", self.shape)
-        G = FunctionSpace(self.mesh, "DG", self.shape - 1)
-        R = FunctionSpace(self.mesh, "R", 0)
-        
-        # define test functions
-        self.v = TestFunction(Q)
-        self.z = TestFunction(G)
-        self.r = TestFunction(R)
-
+    def initialise_functions(self, h_ic, c_d_ic, q_ic, x_N_ic, u_N_ic):
         # define function dictionaries for prognostic variables
-        self.h = dict([[i, interpolate(Expression(h_exp), Q)] for i in range(2)])
-        self.phi = dict([[i, interpolate(Expression(phi_exp), Q)] for i in range(2)])
-        self.c_d = dict([[i, interpolate(Expression(c_d_exp), Q)] for i in range(2)])
-        self.q = dict([[i, interpolate(Expression(q_exp), Q)] for i in range(2)])
-        self.x_N = dict([[i, interpolate(Expression(x_N_exp), R)] for i in range(2)])
-        self.u_N = dict([[i, interpolate(Expression(u_N_exp), R)] for i in range(2)])
-        self.X = interpolate(Expression('x[0]'), Q) 
+        self.h = dict([[i, Function(h_ic, name='h_{}'.format(i))] for i in range(2)])
+        # self.phi = dict([[i, Function(phi_ic, name='phi_{}'.format(i))] for i in range(2)])
+        self.c_d = dict([[i, Function(c_d_ic, name='c_d_{}'.format(i))] for i in range(2)])
+        self.q = dict([[i, Function(q_ic, name='q_{}'.format(i))] for i in range(2)])
+        self.x_N = dict([[i, Function(x_N_ic, name='x_N_{}'.format(i))] for i in range(2)])
+        self.u_N = dict([[i, Function(u_N_ic, name='u_N_{}'.format(i))] for i in range(2)])
+        self.phi = dict()
+        # self.phi[0] = project(self.phi_ic, self.P1CG)
+        self.phi[0] = Function(self.phi_ic, name="phi_0")
+        self.phi[1] = project(self.phi[0], self.P1CG)
+        X_ = project(Expression('x[0]'), self.P1CG)
+        self.X = Function(X_, name='X')
 
         # left boundary marked as 0, right as 1
         class LeftBoundary(SubDomain):
@@ -169,8 +184,6 @@ class Model():
         exterior_facet_domains.set_all(1)
         left_boundary.mark(exterior_facet_domains, 0)
         self.ds = Measure("ds")[exterior_facet_domains] 
-        
-        return Q       
 
     def solve(self, T = None, tol = None, nl_tol = 1e-5):
 
@@ -185,6 +198,12 @@ class Model():
                 if du < tol:
                     return True
             return False
+
+        def smoothed_min(val, min, eps):
+            return 0.5*(((val - min - eps)**2.0)**0.5 + min + val)
+        
+        if not self.mms:
+            adj_start_timestep()
 
         self.t = 0.0
         du = 1e10
@@ -208,6 +227,7 @@ class Model():
                 inv_x_N = 1./x_N_td
                 u_N_td = self.td(self.u_N)
                 h_td = self.td(self.h)
+                smoothed_min(h_td, 1e-8, 1e-10)
                 phi_td = self.td(self.phi)
                 c_d_td = self.td(self.c_d)
                 q_td = self.td(self.q)
@@ -215,6 +235,7 @@ class Model():
                 # momentum
                 q_N = u_N_td*h_td
                 u = q_td/h_td
+                # alpha = 0.0 
                 alpha = self.b*self.dX*(abs(u)+u+(phi_td*h_td)**0.5)*h_td
                 F_q = self.v*(self.q[0] - self.q[1])*dx + \
                     inv_x_N*self.v*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*k*dx + \
@@ -241,39 +262,41 @@ class Model():
                 if self.mms:
                     F_phi = F_phi + self.v*self.s_phi*k*dx
 
-                # deposit
-                F_c_d = self.v*(self.c_d[0] - self.c_d[1])*dx - \
-                    inv_x_N*self.v*self.X*u_N_td*grad(c_d_td)*k*dx - \
-                    self.v*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*k*dx
-                if self.mms:
-                    F_c_d = F_c_d + self.v*self.s_c_d*k*dx
-
                 # nose location/speed
                 F_u_N = self.r*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
                     self.r*self.u_N[0]*self.ds(1)
                 F_x_N = self.r*(self.x_N[0] - self.x_N[1])*dx - self.r*u_N_td*k*dx 
 
-                # SOLVE EQUATIONS
+                # SOLVE COUPLED EQUATIONS
                 solve(F_q == 0, self.q[0], self.bcq)
                 solve(F_h == 0, self.h[0], self.bch)
                 solve(F_phi == 0, self.phi[0], self.bcphi)
-                solve(F_c_d == 0, self.c_d[0], self.bcc_d)
                 solve(F_u_N == 0, self.u_N[0])
                 if not self.mms:
                     solve(F_x_N == 0, self.x_N[0])
 
-                dh = errornorm(h_nl, self.h[0], norm_type="L2", degree=self.shape + 1)
-                dphi = errornorm(phi_nl, self.phi[0], norm_type="L2", degree=self.shape + 1)
-                dq = errornorm(q_nl, self.q[0], norm_type="L2", degree=self.shape + 1)
-                dx_N = errornorm(x_N_nl, self.x_N[0], norm_type="L2", degree=self.shape + 1)
+                dh = errornorm(h_nl, self.h[0], norm_type="L2", degree=3)
+                dphi = errornorm(phi_nl, self.phi[0], norm_type="L2", degree=3)
+                dq = errornorm(q_nl, self.q[0], norm_type="L2", degree=3)
+                dx_N = errornorm(x_N_nl, self.x_N[0], norm_type="L2", degree=3)
                 du_nl = max(dh, dphi, dq, dx_N)/self.timestep
 
                 nl_its += 1
 
-            dh = errornorm(self.h[0], self.h[1], norm_type="L2", degree=self.shape + 1)
-            dphi = errornorm(self.phi[0], self.phi[1], norm_type="L2", degree=self.shape + 1)
-            dq = errornorm(self.q[0], self.q[1], norm_type="L2", degree=self.shape + 1)
-            dx_N = errornorm(self.x_N[0], self.x_N[1], norm_type="L2", degree=self.shape + 1)
+            # deposit
+            F_c_d = self.v*(self.c_d[0] - self.c_d[1])*dx - \
+                inv_x_N*self.v*self.X*u_N_td*grad(c_d_td)*k*dx - \
+                self.v*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*k*dx
+            if self.mms:
+                F_c_d = F_c_d + self.v*self.s_c_d*k*dx
+            
+            # SOLVE NON-COUPLED EQUATIONS
+            solve(F_c_d == 0, self.c_d[0], self.bcc_d)
+
+            dh = errornorm(self.h[0], self.h[1], norm_type="L2", degree=3)
+            dphi = errornorm(self.phi[0], self.phi[1], norm_type="L2", degree=3)
+            dq = errornorm(self.q[0], self.q[1], norm_type="L2", degree=3)
+            dx_N = errornorm(self.x_N[0], self.x_N[1], norm_type="L2", degree=3)
             du = max(dh, dphi, dq, dx_N)/self.timestep
 
             self.h[1].assign(self.h[0])
@@ -284,10 +307,14 @@ class Model():
             self.u_N[1].assign(self.u_N[0])
 
             # display results
-            self.update_plot()
+            if self.plot:
+                self.update_plot()
             self.print_timestep_info(nl_its, du)
 
-    def initialise_plot(self, x_max, h_y_lim = 0.5, u_y_lim = 0.3, phi_y_lim = 0.01, c_d_y_lim = 1.2e-4):
+            if not self.mms:
+                adj_inc_timestep()
+
+    def initialise_plot(self, x_max, h_y_lim = 0.5, u_y_lim = 0.3, phi_y_lim = 0.03, c_d_y_lim = 1.2e-5):
         # fig settings
         self.plot_x = np.linspace(0.0, x_max, 10001)
         self.fig = plt.figure(figsize=(16, 12), dpi=50)
@@ -312,26 +339,26 @@ class Model():
                                             self.y_data(self.q[0].vector().array()/self.h[0].vector().array()), 'r-')
         if self.mms:
             self.vel_line_2, = self.vel_plot.plot(self.plot_x, 
-                                                  self.y_data(self.q[0].vector().array()/self.h[0].vector().array()), 'b-')
+                                                  self.y_data(self.q[1].vector().array()/self.h[0].vector().array()), 'b-')
         self.h_line, = self.h_plot.plot(self.plot_x, 
                                         self.y_data(self.h[0].vector().array()), 'r-')
         if self.mms:
             self.h_line_2, = self.h_plot.plot(self.plot_x, 
-                                        self.y_data(self.h[0].vector().array()), 'b-')
+                                              self.y_data(self.h[1].vector().array()), 'b-')
         self.c_line, = self.c_plot.plot(self.plot_x, 
                                         self.y_data(self.phi[0].vector().array()/
                                                              (self.rho_R_*self.g_*self.h[0].vector().array())
                                                              ), 'r-')
         if self.mms:
             self.c_line_2, = self.c_plot.plot(self.plot_x, 
-                                        self.y_data(self.phi[0].vector().array()/
-                                                             (self.rho_R_*self.g_*self.h[0].vector().array())
-                                                             ), 'b-')
+                                              self.y_data(self.phi[1].vector().array()/
+                                                          (self.rho_R_*self.g_*self.h[0].vector().array())
+                                                          ), 'b-')
         self.c_d_line, = self.c_d_plot.plot(self.plot_x, 
                                             self.y_data(self.c_d[0].vector().array()), 'r-')
         if self.mms:
             self.c_d_line_2, = self.c_d_plot.plot(self.plot_x, 
-                                            self.y_data(self.c_d[0].vector().array()), 'b-')
+                                                  self.y_data(self.c_d[1].vector().array()), 'b-')
 
         self.fig.canvas.draw()
         self.fig.savefig('results/%06.2f.png' % (0.0))       
@@ -383,11 +410,28 @@ if __name__ == '__main__':
     parser.add_option('-m', '--mms',
                       action='store_true', dest='mms', default=False,
                       help='mms test')
+    parser.add_option('-t', '--taylor_test_u_sink',
+                      action='store_true', dest='taylor_test_u_sink', default=False,
+                      help='adjoint taylor test when varying the u_sink parameter')
+    parser.add_option('-i', '--taylor_test_phi_1',
+                      action='store_true', dest='taylor_test_phi_1', default=False,
+                      help='adjoint taylor test when varying initial condition parameter phi_1')
+    parser.add_option('-a', '--adjoint',
+                      action='store_true', dest='adjoint', default=False,
+                      help='adjoint run')
+    parser.add_option('-p', '--phi_ic_test',
+                      action='store_true', dest='phi_ic_test', default=False,
+                      help='test phi initial conditions')
+    parser.add_option('-T', '--end_time',
+                      dest='T', type=float, default=0.2,
+                      help='simulation end time')
     (options, args) = parser.parse_args()
     
     model = Model()
 
+    # MMS test
     if options.mms == True:
+
         h = [] # element sizes
         E = [] # errors
         for i, nx in enumerate([32, 64, 128, 256]):
@@ -406,46 +450,236 @@ if __name__ == '__main__':
             rphi = ln(E[i][1]/E[i-1][1])/ln(h[i]/h[i-1])
             rq = ln(E[i][2]/E[i-1][2])/ln(h[i]/h[i-1])
             ru_N = ln(E[i][3]/E[i-1][3])/ln(h[i]/h[i-1])
-            print "h=%10.2E rh=%.2f rphi=%.2f rq=%.2f ru_N=%.2f Eh=%.2e Ephi=%.2e Eq=%.2e Eu_N=%.2e" % (h[i], rh, rphi, rq, ru_N, E[i][0], E[i][1], E[i][2], E[i][3]) 
+            print ( "h=%10.2E rh=%.2f rphi=%.2f rq=%.2f ru_N=%.2f Eh=%.2e Ephi=%.2e Eq=%.2e Eu_N=%.2e" 
+                    % (h[i], rh, rphi, rq, ru_N, E[i][0], E[i][1], E[i][2], E[i][3]) )
 
-    else:
+    # Adjoint taylor test
+    elif options.taylor_test_u_sink == True:
+
+        model.plot = False
+        model.initialise_function_spaces()
+
+        info_blue('Taylor test for u_sink')
+        
         model.setup()
-        model.solve(T = 1.0)
+        model.solve(T = 0.05)
 
-        # deposit = model.c_d[0].vector().array()
-        # deposit_x = np.linspace(0.0, model.x_N[0].vector().array()[-1], model.L/model.dX_ + 1)
+        c_d = model.c_d[0]
+        J = Functional(c_d*dx*dt[FINISH_TIME])
 
-        # class DepositExpression(Expression):
-        #     current_x_N = 1.0
-        #     L = 1.0
-        #     dX = 0.1
+        parameters["adjoint"]["stop_annotating"] = True # stop registering equations
 
-        #     def __init__(target_array, target_x):
-        #         self.target = target
-        #         self.target_x = target_x
+        dJdu_sink = compute_gradient(J, ScalarParameter("u_sink"))
+        Ju_sink = assemble(c_d*dx)
 
-        #     def eval(self, value, x):
-        #         X = x[0]*current_x_N/L
-        #         value[0] = np.interp(X, self.target_x, self.target, right=0.0)
+        def Jhat(u_sink): # the functional as a pure function of u_sink
+            model.u_sink_ = u_sink
+            model.setup()
+            model.solve(T = 0.05)
 
-        c_d_desired = model.c_d[0].copy(deepcopy=True)
+            c_d = model.c_d[0]
+            return assemble(c_d*dx)
 
-        model.setup(c_0 = 0.0001)
-        model.solve(T = 1.0)
+        # set_log_active(True)
+
+        conv_rate = taylor_test(Jhat, ScalarParameter("u_sink"), Ju_sink, dJdu_sink)
+
+        info_blue('Minimum convergence order with adjoint information = {}'.format(conv_rate))
+        if conv_rate > 1.9:
+            info_blue('*** test passed ***')
+        else:
+            info_red('*** ERROR: test failed ***')
+
+    # Adjoint taylor test
+    elif options.taylor_test_phi_1 == True:
+
+        model.plot = False
+        model.initialise_function_spaces()
+
+        info_blue('Taylor test for phi')
+
+        # parameters["adjoint"]["stop_annotating"] = False # start registering equations
+
+        model.setup()
+        model.solve(T = 0.05)
+
+        c_d = model.c_d[0]
+
+        J = Functional(c_d*dx*dt[FINISH_TIME])
+        # reduced_functional = ReducedFunctional(J, InitialConditionParameter("PhiInitialCondition"))
+        # m_opt = minimize(reduced_functional, method = "L-BFGS-B", options = {'disp': True})
+
+        parameters["adjoint"]["stop_annotating"] = True # stop registering equations
+
+        # for some reason this only works with forget=False
+        dJdphi = compute_gradient(J, InitialConditionParameter("phi_0"), forget=False)
+        Jphi = assemble(c_d*dx)
+        print dJdphi.vector().array(), Jphi
+
+        def Jhat(phi_ic): # the functional as a pure function of phi_ic
+            model.setup(phi_ic)
+            model.solve(T = 0.05)
+
+            c_d = model.c_d[0]
+            print 'Jhat: ', assemble(c_d*dx)
+            return assemble(c_d*dx)
+
+        # set_log_active(True)
+
+        conv_rate = taylor_test(Jhat, InitialConditionParameter("phi_0"), Jphi, dJdphi, value = model.phi_ic, seed=1e-1)
+
+        info_blue('Minimum convergence order with adjoint information = {}'.format(conv_rate))
+        if conv_rate > 1.9:
+            info_blue('*** test passed ***')
+        else:
+            info_red('*** ERROR: test failed ***')
+
+    # Adjoint 
+    elif options.adjoint == True:
+
+        model.plot = False
+        model.initialise_function_spaces()
+
+        f = open('deposit_data.json','r')
+        json_string = f.readline()
+        data = np.array(json.loads(json_string))
+        c_d_aim = Function(model.P1CG)
+        c_d_aim.vector()[:] = data
+        print c_d_aim.vector().array()
+
+        f = open('length_data.json','r')
+        json_string = f.readline()
+        data = np.array(json.loads(json_string))
+        x_N_aim = Function(model.R)
+        x_N_aim.vector()[:] = data
+        print x_N_aim.vector().array()
+
+        phi_ic = project(Expression('0.01'), model.P1CG)
+        model.setup(phi_ic)
+        model.solve(T = options.T)
+
+        adj_html("forward.html", "forward")
+        adj_html("adjoint.html", "adjoint")
+
+        # functional components
+        int_0_scale = Constant(1)
+        int_0_scale_2 = Constant(1)
+        int_1_scale = Constant(1)
+
+        int_0 = inner(model.c_d[0]-c_d_aim, model.c_d[0]-c_d_aim)*int_0_scale*dx
+        int_0_2_d = inner(grad(model.c_d[0])-grad(c_d_aim), grad(model.c_d[0])-grad(c_d_aim))*int_0_scale_2
+        int_0_2 = int_0_2_d*ds(0) + int_0_2_d*ds(1)
+        int_1 = inner(model.x_N[0]-x_N_aim, model.x_N[0]-x_N_aim)*int_1_scale*dx
+
+        int_0_scale.assign(1e-2/assemble(int_0))
+        int_0_scale_2.assign(0) # 1e-4/assemble(int_0_2))
+        int_1_scale.assign(1e-4/assemble(int_1))
+        print assemble(int_0)
+        print assemble(int_0_2)
+        print assemble(int_1)
+        ### int_0 1e-2, int_1 1e-4 - worked well
         
-        J = Functional((model.c_d[0]-c_d_desired)*dx*dt[FINISH_TIME])
-        reduced_functional = ReducedFunctional(J, InitialConditionParameter(model.phi[0]))
+        ## functional regularisation
+        reg_scale = Constant(1)
+        int_reg = inner(grad(model.phi[0]), grad(model.phi[0]))*reg_scale*dx
+        reg_scale_base = 1e-2
+        reg_scale.assign(reg_scale_base)
+
+        ## functional
+        J = Functional((int_0 + int_0_2 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
+
+        ## display gradient information
+        dJdphi = compute_gradient(J, InitialConditionParameter("phi_0"))
         
-        m_opt = minimize(reduced_functional, method = "L-BFGS-B")
+        import IPython
+        IPython.embed()
 
-        # deposit_desired = model.c_d[0].copy(deepcopy=True)
+        # clear old data
+        f = open('phi_ic_adj.json','w')
+        f.close()
 
-        # # left boundary marked as 0, right as 1
-        # class MeasureLocation1(SubDomain):
-        #     def inside(self, x, on_boundary):
-        #         return True if ( x[0] > 0.1 and x[0] < 0.11
-        # left_boundary = LeftBoundary()
-        # exterior_facet_domains = FacetFunction("uint", self.mesh)
-        # exterior_facet_domains.set_all(1)
-        # left_boundary.mark(exterior_facet_domains, 0)
-        # self.ds = Measure("ds")[exterior_facet_domains] 
+        j_log = []
+
+        def eval_cb(j, m):
+            print "* * * Completed forward model"
+            print "j = {}".format(j)
+            j_log.append(j)
+            f = open('j_log.json','w')
+            f.write(json.dumps(j_log))
+            f.close()
+
+        ##############################
+        #### REDUCED FUNCTIONAL HACK
+        ##############################
+
+        class MyReducedFunctional(ReducedFunctional):
+
+            def __call__(self, value):
+
+                #### initial condition dump hack ####
+                ic = list(value[0].vector().array())
+                f = open('phi_ic_adj_latest.json','w')
+                f.write(json.dumps(ic))
+                f.write('\n')
+                f.close()
+                f = open('phi_ic_adj.json','a')
+                f.write(json.dumps(ic))
+                f.write('\n')
+                f.close()
+
+                print "\n* * * Computing forward model"
+
+                return (super(MyReducedFunctional, self)).__call__(value)
+
+        #######################################
+        #### END OF REDUCED FUNCTIONAL HACK
+        #######################################
+
+        reduced_functional = MyReducedFunctional(J, InitialConditionParameter("phi_0"),
+                                                 eval_cb = eval_cb,
+                                                 scale = 1e-0)
+        
+        for i in range(10):
+            reg_scale.assign(reg_scale_base*2**(0-i))
+
+            m_opt = minimize(reduced_functional, method = "L-BFGS-B", options = {'maxiter': 4, 'disp': True, 'gtol': 1e-9, 'ftol': 1e-9}, 
+                             bounds = (1e-7, 1e-0))
+
+        print m_opt.vector().array()
+
+    # Adjoint 
+    elif options.phi_ic_test == True:
+
+        model.initialise_function_spaces()
+        f = open('phi_ic_adj_latest.json','r')
+        json_string = f.readline()
+        data = np.array(json.loads(json_string))
+        phi_ic = Function(model.P1CG)
+        phi_ic.vector()[:] = data
+        
+        model.setup(phi_ic)
+
+        model.solve(T = options.T)    
+
+    else:        
+
+        model.initialise_function_spaces()
+        phi_ic = project(Expression('0.03+0.005*sin(2*pi*x[0])'), model.P1CG)
+        
+        model.setup(phi_ic)
+        data = list(model.phi[0].vector().array())
+        f = open('phi_ic.json','w')
+        f.write(json.dumps(data))
+        f.close()
+
+        model.solve(T = options.T)
+
+        data = list(model.c_d[0].vector().array())
+        f = open('deposit_data.json','w')
+        f.write(json.dumps(data))
+        f.close()
+
+        data = list(model.x_N[0].vector().array())
+        f = open('length_data.json','w')
+        f.write(json.dumps(data))
+        f.close()
