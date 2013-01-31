@@ -307,43 +307,6 @@ if __name__ == '__main__':
     
     model = Model()
 
-    # Adjoint taylor test
-    if options.taylor_test_u_sink == True:
-
-        model.plot = False
-        model.initialise_function_spaces()
-
-        info_blue('Taylor test for u_sink')
-        
-        model.setup()
-        model.solve(T = 0.05)
-
-        c_d = model.c_d[0]
-        J = Functional(c_d*dx*dt[FINISH_TIME])
-
-        parameters["adjoint"]["stop_annotating"] = True # stop registering equations
-
-        dJdu_sink = compute_gradient(J, ScalarParameter("u_sink"))
-        Ju_sink = assemble(c_d*dx)
-
-        def Jhat(u_sink): # the functional as a pure function of u_sink
-            model.u_sink_ = u_sink
-            model.setup()
-            model.solve(T = 0.05)
-
-            c_d = model.c_d[0]
-            return assemble(c_d*dx)
-
-        # set_log_active(True)
-
-        conv_rate = taylor_test(Jhat, ScalarParameter("u_sink"), Ju_sink, dJdu_sink)
-
-        info_blue('Minimum convergence order with adjoint information = {}'.format(conv_rate))
-        if conv_rate > 1.9:
-            info_blue('*** test passed ***')
-        else:
-            info_red('*** ERROR: test failed ***')
-
     # Adjoint 
     elif options.adjoint == True:
 
