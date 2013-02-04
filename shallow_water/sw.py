@@ -92,9 +92,16 @@ class Model():
                 self.map_dict[i] = self.W.sub(i).dofmap().cell_dofs(0)
 
         # define test functions
-        (self.q_tf, self.h_tf, self.phi_tf, self.c_d_tf, self.u_N_tf, self.x_N_tf) = TestFunctions(self.W)
+        (self.q_tf, self.h_tf, self.phi_tf, self.c_d_tf, self.x_N_tf, self.u_N_tf) = TestFunctions(self.W)
 
-    def setup(self, h_ic = None, phi_ic = None, q_ic = None):
+        # initialise functions
+        X_ = project(Expression('x[0]'), self.X_FS)
+        self.X = Function(X_, name='X')
+
+        self.w = dict()
+        self.w[0] = Function(self.W, name='U')
+
+    def setup(self, h_ic = None, phi_ic = None, q_ic = None, w_ic = None):
 
         # define constants
         self.dX = Constant(self.dX_, name="dX")
@@ -104,47 +111,49 @@ class Model():
         self.Fr = Constant(self.Fr_, name="Fr")
         self.u_sink = Constant(self.u_sink_, name="u_sink")
 
-        # define initial conditions
-        if type(h_ic) == type(None):
-            h_ic = project(Constant(self.h_0), self.h_FS)
-        if type(phi_ic) == type(None): 
-            phi_ic = project(Constant(self.c_0*self.rho_R_*self.g_*self.h_0), self.phi_FS)
-        if type(q_ic) == type(None):
-            q_ic_exp = Expression('(1.0 - cos((x[0]/{0})*pi))*{1}/2.0'
-                        .format(self.L, self.Fr_*phi_ic.vector().array()[-1]**0.5*h_ic.vector().array()[-1]))
-            # q_ic_exp = Expression('(1.0 - cos((x[0]/{0})*pi))*{1}/2.0'
-            #             .format(self.L, self.Fr_*phi_ic((0,0))**0.5*h_ic.vector().array()[-1]))
-            q_ic = project(q_ic_exp, self.q_FS)
+        if type(w_ic) == type(None):
+            # define initial conditions
+            if type(h_ic) == type(None):
+                h_ic = Constant(self.h_0)
+                # h_ic = project(Expression('{}'.format(self.h_0)), self.h_FS)
+                h_N = self.h_0
+            else:
+                h_N = h_ic.vector().array()[-1]
+            if type(phi_ic) == type(None): 
+                phi_ic = Constant(self.c_0*self.rho_R_*self.g_*self.h_0)
+                # phi_ic = project(Expression('{}'.format(self.c_0*self.rho_R_*self.g_*self.h_0)), self.phi_FS)
+                phi_N = self.c_0*self.rho_R_*self.g_*self.h_0
+            else:
+                phi_N = phi_ic.vector().array()[-1]
+            if type(q_ic) == type(None):
+                q_ic = Expression('(1.0 - cos((x[0]/{0})*pi))*{1}/2.0'
+                                  .format(self.L, self.Fr_*phi_N**0.5*h_N))
 
-        self.w_ic = [
-                        q_ic, 
-                        h_ic, 
-                        phi_ic, 
-                        Function(self.phi_FS), 
-                        Constant(self.Fr_*phi_ic.vector().array()[-1]**0.5),
-                        # project(Constant('{0}'.format(self.Fr_*phi_ic((0,0))**0.5)), self.var_N_FS),
-                        Constant(self.x_N_)
-                        ]
+            self.w_ic = [
+                q_ic, 
+                h_ic, 
+                phi_ic, 
+                Function(self.phi_FS), 
+                Constant(self.x_N_)
+                ]
+
+            
+        else:
+            self.w_ic = w_ic
 
         # define bc's
         bcc_d = DirichletBC(self.W.sub(3), '0.0', "near(x[0], 1.0) && on_boundary")
         bcq = DirichletBC(self.W.sub(0), '0.0', "near(x[0], 0.0) && on_boundary")
         self.bc = [bcq, bcc_d]
 
-        self.generate_form()
+        # self.generate_form()
+        self.generate_form_no_split()
         
         # initialise plotting
         if self.plot:
             self.plotter = sw_io.Plotter(self)
 
     def generate_form(self):
-
-        # initialise functions
-        X_ = project(Expression('x[0]'), self.X_FS)
-        self.X = Function(X_, name='X')
-
-        self.w = dict()
-        self.w[0] = Function(self.W, name='U')
 
         # galerkin projection of initial conditions on to w
         test = TestFunction(self.W)
@@ -153,94 +162,185 @@ class Model():
         for i in range(len(self.w_ic)):
             a += inner(test[i], trial[i])*dx 
             L += inner(test[i], self.w_ic[i])*dx
-        # i = 2
-        # a += inner(test[i], trial[i])*dx 
-        # L += inner(test[i], self.w_ic[i])*dx
         solve(a == L, self.w[0], solver_parameters={"linear_solver": "mumps"})
 
-        # # copy to w[1]
-        # self.w[1] = project(self.w[0], self.W)
+        # copy to w[1]
+        self.w[1] = project(self.w[0], self.W)
 
-        # # smooth minimum function
-        # def smoothed_min(val, min, eps):
-        #     return 0.5*(((val - min - eps)**2.0)**0.5 + min + val)
+        # smooth minimum function
+        def smoothed_min(val, min, eps):
+            return 0.5*(((val - min - eps)**2.0)**0.5 + min + val)
 
-        # # define 1/dt
-        # self.k = Constant(self.timestep)
+        # define 1/dt
+        self.k = Constant(self.timestep)
 
-        # # time discretisation of values
-        # def time_discretise(u):
-        #     return 0.5*u[0] + 0.5*u[1]
+        # time discretisation of values
+        def time_discretise(u):
+            return 0.5*u[0] + 0.5*u[1]
 
-        # q = dict()
-        # h = dict()
-        # phi = dict()
-        # c_d = dict()
-        # u_N = dict()
-        # x_N = dict()
+        q = dict()
+        h = dict()
+        phi = dict()
+        c_d = dict()
+        u_N = dict()
+        x_N = dict()
 
-        # q[0], h[0], phi[0], c_d[0], u_N[0], x_N[0] = split(self.w[0])
-        # q[1], h[1], phi[1], c_d[1], u_N[1], x_N[1] = split(self.w[1])
+        q[0], h[0], phi[0], c_d[0], u_N[0], x_N[0] = split(self.w[0])
+        q[1], h[1], phi[1], c_d[1], u_N[1], x_N[1] = split(self.w[1])
 
-        # x_N_td = time_discretise(x_N)
-        # inv_x_N = 1./x_N_td
-        # u_N_td = time_discretise(u_N)
-        # h_td = time_discretise(h)
-        # smoothed_min(h_td, 1e-8, 1e-10)
-        # phi_td = time_discretise(phi)
-        # c_d_td = time_discretise(c_d)
-        # q_td = time_discretise(q)
+        x_N_td = time_discretise(x_N)
+        inv_x_N = 1./x_N_td
+        u_N_td = time_discretise(u_N)
+        h_td = time_discretise(h)
+        smoothed_min(h_td, 1e-8, 1e-10)
+        phi_td = time_discretise(phi)
+        c_d_td = time_discretise(c_d)
+        q_td = time_discretise(q)
 
-        # # momentum
-        # q_N = u_N_td*h_td
-        # u = q_td/h_td
-        # # alpha = 0.0 
-        # alpha = self.b*self.dX*(abs(u)+u+(phi_td*h_td)**0.5)*h_td
-        # F_q = self.q_tf*(q[0] - q[1])*dx + \
-        #     inv_x_N*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*self.k*dx + \
-        #     inv_x_N*u_N_td*grad(self.q_tf*self.X)*q_td*self.k*dx - \
-        #     inv_x_N*u_N_td*self.q_tf*self.X*q_N*self.n*self.k*self.ds(1) + \
-        #     inv_x_N*grad(self.q_tf)*alpha*grad(u)*self.k*dx - \
-        #     inv_x_N*self.q_tf*alpha*grad(u)*self.n*self.k*self.ds(1) 
-        #     # inv_x_N*self.q_tf*alpha*Constant(-0.22602295050021465)*self.n*self.k*self.ds(1) 
-        # if self.mms:
-        #     F_q = F_q + self.q_tf*self.s_q*self.k*dx
+        # momentum
+        q_N = u_N_td*h_td
+        u = q_td/h_td
+        abs_u = ((u + 1e-10)**2.0)**0.5
+        alpha = self.b*self.dX*(abs_u+u+(phi_td*h_td)**0.5)*h_td
+        # alpha = 0.0 
+        F_q = self.q_tf*(q[0] - q[1])*dx + \
+            inv_x_N*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*self.k*dx + \
+            inv_x_N*u_N_td*grad(self.q_tf*self.X)*q_td*self.k*dx - \
+            inv_x_N*u_N_td*self.q_tf*self.X*q_N*self.n*self.k*self.ds(1) + \
+            inv_x_N*grad(self.q_tf)*alpha*grad(u)*self.k*dx - \
+            inv_x_N*self.q_tf*alpha*grad(u)*self.n*self.k*self.ds(1) 
+            # inv_x_N*self.q_tf*alpha*Constant(-0.22602295050021465)*self.n*self.k*self.ds(1) 
+        if self.mms:
+            F_q = F_q + self.q_tf*self.s_q*self.k*dx
 
-        # # conservation
-        # F_h = self.h_tf*(h[0] - h[1])*dx + \
-        #     inv_x_N*self.h_tf*grad(q_td)*self.k*dx - \
-        #     inv_x_N*self.h_tf*self.X*u_N_td*grad(h_td)*self.k*dx 
-        # if self.mms:
-        #     F_h = F_h + self.h_tf*self.s_h*self.k*dx
+        # conservation
+        F_h = self.h_tf*(h[0] - h[1])*dx + \
+            inv_x_N*self.h_tf*grad(q_td)*self.k*dx - \
+            inv_x_N*self.h_tf*self.X*u_N_td*grad(h_td)*self.k*dx 
+        if self.mms:
+            F_h = F_h + self.h_tf*self.s_h*self.k*dx
 
-        # # concentration
-        # F_phi = self.phi_tf*(phi[0] - phi[1])*dx + \
-        #     inv_x_N*self.phi_tf*grad(q_td*phi_td/h_td)*self.k*dx - \
-        #     inv_x_N*self.phi_tf*self.X*u_N_td*grad(phi_td)*self.k*dx + \
-        #     self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx 
-        # if self.mms:
-        #     F_phi = F_phi + self.phi_tf*self.s_phi*self.k*dx
+        # concentration
+        F_phi = self.phi_tf*(phi[0] - phi[1])*dx + \
+            inv_x_N*self.phi_tf*grad(q_td*phi_td/h_td)*self.k*dx - \
+            inv_x_N*self.phi_tf*self.X*u_N_td*grad(phi_td)*self.k*dx + \
+            self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx 
+        if self.mms:
+            F_phi = F_phi + self.phi_tf*self.s_phi*self.k*dx
 
-        # # nose location/speed
-        # F_u_N = self.u_N_tf*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
-        #     self.u_N_tf*u_N[0]*self.ds(1)
-        # if self.mms:
-        #     F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*Constant(0.0)*self.k*dx
-        # else:
-        #     F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*u_N_td*self.k*dx 
+        # nose location/speed
+        F_u_N = self.u_N_tf*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
+            self.u_N_tf*u_N[0]*self.ds(1)
+        if self.mms:
+            F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*Constant(0.0)*self.k*dx
+        else:
+            F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*u_N_td*self.k*dx 
 
-        # # deposit
-        # F_c_d = self.c_d_tf*(c_d[0] - c_d[1])*dx - \
-        #     inv_x_N*self.c_d_tf*self.X*u_N_td*grad(c_d_td)*self.k*dx - \
-        #     self.c_d_tf*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx
-        # if self.mms:
-        #     F_c_d = F_c_d + self.c_d_tf*self.s_c_d*self.k*dx
+        # deposit
+        F_c_d = self.c_d_tf*(c_d[0] - c_d[1])*dx - \
+            inv_x_N*self.c_d_tf*self.X*u_N_td*grad(c_d_td)*self.k*dx - \
+            self.c_d_tf*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx
+        if self.mms:
+            F_c_d = F_c_d + self.c_d_tf*self.s_c_d*self.k*dx
 
-        # self.F = F_q + F_h + F_phi + F_c_d + F_u_N + F_x_N
+        # combine PDE's
+        self.F = F_q + F_h + F_phi + F_c_d + F_u_N + F_x_N
 
-        # # Compute directional derivative about u in the direction of du (Jacobian)
-        # self.dw = TrialFunction(self.W)
-        # self.J = derivative(self.F, self.w[0], self.dw)
+        # Compute directional derivative about u in the direction of du (Jacobian)
+        self.J = derivative(self.F, self.w[0], trial)
+
+    def generate_form_no_split(self):
+
+        # galerkin projection of initial conditions on to w
+        test = TestFunction(self.W)
+        trial = TrialFunction(self.W)
+        a = 0; L = 0
+        for i in range(len(self.w_ic)):
+            a += inner(test[i], trial[i])*dx 
+            L += inner(test[i], self.w_ic[i])*dx
+        solve(a == L, self.w[0], solver_parameters={"linear_solver": "mumps"})
+
+        # copy to w[1]
+        self.w[1] = project(self.w[0], self.W)
+
+        # smooth minimum function
+        def smoothed_min(val, min, eps):
+            return 0.5*(((val - min - eps)**2.0)**0.5 + min + val)
+
+        # define 1/dt
+        self.k = Constant(self.timestep)
+
+        # time discretisation of values
+        def time_discretise(u0, u1):
+            return 0.5*u0 + 0.5*u1
+
+        q_td = time_discretise(self.w[0][0], self.w[1][0])
+        h_td = time_discretise(self.w[0][1], self.w[1][1])
+        smoothed_min(h_td, 1e-8, 1e-10)
+        phi_td = time_discretise(self.w[0][2], self.w[1][2])
+        c_d_td = time_discretise(self.w[0][3], self.w[1][3])
+        u_N_td = time_discretise(self.w[0][4], self.w[1][4])
+        x_N_td = time_discretise(self.w[0][5], self.w[1][5])
+        inv_x_N = 1./x_N_td
+
+        # momentum
+        q_N = u_N_td*h_td
+        u = q_td/h_td
+        abs_u = ((u + 1e-10)**2.0)**0.5
+        alpha = self.b*self.dX*(abs_u+u+(phi_td*h_td)**0.5)*h_td
+        # alpha = 0.0 
+        F_q = self.q_tf*(self.w[0][0] - self.w[1][0])*dx + \
+            inv_x_N*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*self.k*dx + \
+            inv_x_N*u_N_td*grad(self.q_tf*self.X)*q_td*self.k*dx - \
+            inv_x_N*u_N_td*self.q_tf*self.X*q_N*self.n*self.k*self.ds(1) + \
+            inv_x_N*grad(self.q_tf)*alpha*grad(u)*self.k*dx - \
+            inv_x_N*self.q_tf*alpha*grad(u)*self.n*self.k*self.ds(1) 
+            # inv_x_N*self.q_tf*alpha*Constant(-0.22602295050021465)*self.n*self.k*self.ds(1) 
+        if self.mms:
+            F_q = F_q + self.q_tf*self.s_q*self.k*dx
+
+        # conservation
+        F_h = self.h_tf*(self.w[0][1] - self.w[1][1])*dx + \
+            inv_x_N*self.h_tf*grad(q_td)*self.k*dx - \
+            inv_x_N*self.h_tf*self.X*u_N_td*grad(h_td)*self.k*dx 
+        if self.mms:
+            F_h = F_h + self.h_tf*self.s_h*self.k*dx
+
+        # concentration
+        F_phi = self.phi_tf*(self.w[0][2] - self.w[1][2])*dx + \
+            inv_x_N*self.phi_tf*grad(q_td*phi_td/h_td)*self.k*dx - \
+            inv_x_N*self.phi_tf*self.X*u_N_td*grad(phi_td)*self.k*dx + \
+            self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx 
+        if self.mms:
+            F_phi = F_phi + self.phi_tf*self.s_phi*self.k*dx
+
+        # deposit
+        F_c_d = self.c_d_tf*(self.w[0][3] - self.w[1][3])*dx - \
+            inv_x_N*self.c_d_tf*self.X*u_N_td*grad(c_d_td)*self.k*dx - \
+            self.c_d_tf*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx
+        if self.mms:
+            F_c_d = F_c_d + self.c_d_tf*self.s_c_d*self.k*dx
+
+        # nose location/speed
+        F_u_N = self.u_N_tf*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
+            self.u_N_tf*self.w[0][4]*self.ds(1)
+        if self.mms:
+            F_x_N = self.x_N_tf*(self.w[0][5] - self.w[1][5])*dx - self.x_N_tf*Constant(0.0)*self.k*dx
+        else:
+            F_x_N = self.x_N_tf*(self.w[0][5] - self.w[1][5])*dx - self.x_N_tf*u_N_td*self.k*dx 
+
+        # F_q = self.q_tf*(self.w[0][0] - self.w[1][0])*dx - self.q_tf*Constant(0.01)*self.k*dx
+        # F_h = self.h_tf*(self.w[0][1] - self.w[1][1])*dx - self.h_tf*Constant(0.01)*self.k*dx
+        # F_phi = self.phi_tf*(self.w[0][2] - self.w[1][2])*dx - self.phi_tf*Constant(0.01)*self.k*dx
+        # F_c_d = self.c_d_tf*(self.w[0][3] - self.w[1][3])*dx - self.c_d_tf*Constant(0.01)*self.k*dx
+        # F_u_N = self.u_N_tf*(self.w[0][4] - self.w[1][4])*dx - self.u_N_tf*Constant(0.01)*self.k*dx
+        # F_x_N = self.x_N_tf*(self.w[0][5] - self.w[1][5])*dx - self.x_N_tf*Constant(0.01)*self.k*dx
+
+        # combine PDE's
+        self.F = F_q + F_h + F_phi + F_c_d + F_u_N + F_x_N
+
+        # Compute directional derivative about u in the direction of du (Jacobian)
+        self.J = derivative(self.F, self.w[0], trial)
 
     def solve(self, T = None, tol = None, nl_tol = 1e-5):
 
@@ -280,9 +380,6 @@ class Model():
             if self.plot:
                 self.plotter.update_plot(self)
             sw_io.print_timestep_info(self, delta)
-
-            # plot(self.w[0].split()[3], rescale=True)
-            # interactive()
 
 if __name__ == '__main__':
 

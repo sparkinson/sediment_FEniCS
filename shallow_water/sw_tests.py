@@ -112,32 +112,42 @@ def taylor_tester():
     
     info_blue('Taylor test for phi')
 
-    phi_ic = project(Constant(0.06), model.phi_FS)
-    # phi_ic = Constant(0.06)
+    phi_ic = project(Expression('0.01'), model.phi_FS)
     model.setup(phi_ic = phi_ic)
-    # model.solve(T = 0.03)
+    # w_ic = project(Expression(['(1.0 - cos((x[0]/{0})*pi))*{1}/2.0'
+    #                            .format(model.L, model.Fr_*0.01**0.5*model.h_0), 
+    #                            '0.4',
+    #                            '0.01',
+    #                            '0.0',
+    #                            '{0}'.format(model.Fr_*phi_ic.vector().array()[-1]**0.5),
+    #                            '0.2'], model.W.ufl_element()), model.W)
+    # model.setup(w_ic = w_ic)
+    # model.solve(T = 0.03)       
 
-    adj_html("forward.html", "forward")
-    adj_html("adjoint.html", "adjoint")
+    w_0 = model.w[0]
+    (q, h, phi_000, c_d, u_N, x_N) = split(w_0)
+    J = Functional(inner(w_0, w_0)*dx*dt[FINISH_TIME])
+    Jw = assemble(inner(w_0, w_0)*dx)
 
-    J = Functional(inner(model.w[0][2], model.w[0][2])*dx*dt[FINISH_TIME])
-    # replay_dolfin()
-    dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic))
-    # dJdphi = compute_gradient(J, ScalarParameter(phi_ic))
-    print dJdphi
-    Jphi = assemble(inner(model.w[0][2], model.w[0][2])*dx)
+    parameters["adjoint"]["stop_annotating"] = True 
 
-    parameters["adjoint"]["stop_annotating"] = True # stop registering equations
-    
+    dJdw = compute_gradient(J, InitialConditionParameter(phi_ic))    
     def Jhat(phi_ic):
         model.setup(phi_ic = phi_ic)
         # model.solve(T = 0.03)
-        # (q, h, phi, c_d, u_N, x_N) = split(model.w[0])
-        print 'Jhat: ', assemble(inner(model.w[0][2], model.w[0][2])*dx)
-        return assemble(inner(model.w[0][2], model.w[0][2])*dx)
+        (q, h, phi, c_d, u_N, x_N) = split(w_0)
+        print 'Jhat: ', assemble(inner(w_0, w_0)*dx)
+        return assemble(inner(w_0, w_0)*dx)
+    conv_rate = taylor_test(Jhat, InitialConditionParameter(phi_ic), Jw, dJdw, value = phi_ic, seed=1e-4)
 
-    # conv_rate = taylor_test(Jhat, ScalarParameter(phi_ic), Jphi, dJdphi, value = phi_ic, seed=1e-4)
-    conv_rate = taylor_test(Jhat, InitialConditionParameter(phi_ic), Jphi, dJdphi, value = phi_ic, seed=1e-4)
+    # dJdw = compute_gradient(J, InitialConditionParameter(w_ic))    
+    # def Jhat(w_ic):
+    #     model.setup(w_ic = w_ic)
+    #     model.solve(T = 0.03)
+    #     (q, h, phi, c_d, u_N, x_N) = split(w_0)
+    #     print 'Jhat: ', assemble(inner(w_0, w_0)*dx)
+    #     return assemble(inner(w_0, w_0)*dx)
+    # conv_rate = taylor_test(Jhat, InitialConditionParameter(w_ic), Jw, dJdw, value = w_ic, seed=1e-4)
     
     info_blue('Minimum convergence order with adjoint information = {}'.format(conv_rate))
     if conv_rate > 1.9:
