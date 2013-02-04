@@ -7,7 +7,7 @@ from dolfin_adjoint import *
 import numpy as np
 from optparse import OptionParser
 import json
-import sw_output
+import sw_io
 
 ############################################################
 # DOLFIN SETTINGS
@@ -17,11 +17,11 @@ parameters["form_compiler"]["cpp_optimize"] = True
 parameters['krylov_solver']['relative_tolerance'] = 1e-15
 dolfin.parameters["optimization"]["test_gradient"] = False
 dolfin.parameters["optimization"]["test_gradient_seed"] = 0.1
+solver_parameters = {}
+solver_parameters["linear_solver"] = "gmres"
 # info(parameters, True)
-#set_log_active(False)
+# set_log_active(False)
 set_log_level(PROGRESS)
-
-# parameters["adjoint"]["stop_annotating"] = True
 
 ############################################################
 # TIME DISCRETISATION FUNCTIONS
@@ -38,7 +38,6 @@ class Model():
     b_ = 0.0
 
     # current properties
-    # g_prime_ = 0.81 # 9.81*0.0077
     c_0 = 0.00349
     rho_R_ = 1.717
     h_0 = 0.4
@@ -48,7 +47,7 @@ class Model():
     u_sink_ = 1e-3
 
     # time step
-    timestep = 1e-3
+    timestep = 1e-2
 
     # mms test (default False)
     mms = False
@@ -62,17 +61,38 @@ class Model():
         self.mesh = IntervalMesh(int(self.L/self.dX_), 0.0, self.L)
         self.n = FacetNormal(self.mesh)
 
+        # left boundary marked as 0, right as 1
+        class LeftBoundary(SubDomain):
+            def inside(self, x, on_boundary):
+                return x[0] < 0.5 + DOLFIN_EPS and on_boundary
+        left_boundary = LeftBoundary()
+        exterior_facet_domains = FacetFunction("uint", self.mesh)
+        exterior_facet_domains.set_all(1)
+        left_boundary.mark(exterior_facet_domains, 0)
+        self.ds = Measure("ds")[exterior_facet_domains] 
+
         # define function spaces
-        self.h_degree = 1
-        self.h_CG = FunctionSpace(self.mesh, "CG", self.h_degree)
         self.q_degree = 1
-        self.q_CG = FunctionSpace(self.mesh, "CG", self.q_degree)
-        self.R = FunctionSpace(self.mesh, "R", 0)
-        
+        self.q_FS = FunctionSpace(self.mesh, "CG", self.q_degree)
+        self.h_degree = 1
+        self.h_FS = FunctionSpace(self.mesh, "CG", self.h_degree)
+        self.phi_degree = 1
+        self.phi_FS = FunctionSpace(self.mesh, "CG", self.h_degree)
+        self.var_N_FS = FunctionSpace(self.mesh, "R", 0)
+        self.W = MixedFunctionSpace([self.q_FS, self.h_FS, self.phi_FS, self.phi_FS, self.var_N_FS, self.var_N_FS])
+        self.X_FS = FunctionSpace(self.mesh, "CG", 1)
+
+        # get dof_maps for plots
+        self.map_dict = dict()
+        for i in range(6):
+            if len(self.W.sub(i).dofmap().dofs()) > 1:
+                self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j)[0] for j in range(len(self.W.sub(i).dofmap().dofs())-1)]
+                self.map_dict[i].append(self.W.sub(i).dofmap().cell_dofs(len(self.W.sub(i).dofmap().dofs())-2)[1])
+            else:
+                self.map_dict[i] = self.W.sub(i).dofmap().cell_dofs(0)
+
         # define test functions
-        self.v1 = TestFunction(self.h_CG)
-        self.v2 = TestFunction(self.q_CG)
-        self.r = TestFunction(self.R)        
+        (self.q_tf, self.h_tf, self.phi_tf, self.c_d_tf, self.u_N_tf, self.x_N_tf) = TestFunctions(self.W)
 
     def setup(self, h_ic = None, phi_ic = None, q_ic = None):
 
@@ -85,131 +105,142 @@ class Model():
         self.u_sink = Constant(self.u_sink_, name="u_sink")
 
         # define initial conditions
-        if h_ic:
-            self.h_ic = h_ic
-        else:
-            self.h_ic = project(Expression(str(self.h_0)), self.h_CG)
+        if type(h_ic) == type(None):
+            h_ic = project(Constant(self.h_0), self.h_FS)
+        if type(phi_ic) == type(None): 
+            phi_ic = project(Constant(self.c_0*self.rho_R_*self.g_*self.h_0), self.phi_FS)
+        if type(q_ic) == type(None):
+            q_ic_exp = Expression('(1.0 - cos((x[0]/{0})*pi))*{1}/2.0'
+                        .format(self.L, self.Fr_*phi_ic.vector().array()[-1]**0.5*h_ic.vector().array()[-1]))
+            # q_ic_exp = Expression('(1.0 - cos((x[0]/{0})*pi))*{1}/2.0'
+            #             .format(self.L, self.Fr_*phi_ic((0,0))**0.5*h_ic.vector().array()[-1]))
+            q_ic = project(q_ic_exp, self.q_FS)
 
-        if phi_ic:
-            self.phi_ic = phi_ic
-        else:
-            self.phi_ic = project(Expression(str(self.c_0*self.rho_R_*self.g_*self.h_0)), self.h_CG)
-
-        if q_ic:
-            self.q_ic = q_ic
-        else:
-            x = (1.0)
-            self.q_ic = project(Expression('(1.0 - cos((x[0]/{0})*pi))*{1}/2.0'
-                                           .format(self.L, self.Fr_*self.phi_ic(x)**0.5*self.h_ic(x)))
-                                , self.q_CG)
-            # self.q_ic = project(Expression('0.0'), self.q_CG)
-
-        self.c_d_ic = project(Expression('0.0'), self.h_CG)
-        self.x_N_ic = project(Expression(str(self.x_N_)), self.R)
-        self.u_N_ic = project(Expression('0.0'), self.R)
-
-        # initialise functions
-        self.initialise_functions()
+        self.w_ic = [
+                        q_ic, 
+                        h_ic, 
+                        phi_ic, 
+                        Function(self.phi_FS), 
+                        Constant(self.Fr_*phi_ic.vector().array()[-1]**0.5),
+                        # project(Constant('{0}'.format(self.Fr_*phi_ic((0,0))**0.5)), self.var_N_FS),
+                        Constant(self.x_N_)
+                        ]
 
         # define bc's
-        self.bch = []
-        self.bcphi = []
-        self.bcc_d = [DirichletBC(self.h_CG, '0.0', "near(x[0], 1.0) && on_boundary")]
-        self.bcq = [DirichletBC(self.q_CG, '0.0', "near(x[0], 0.0) && on_boundary")]
+        bcc_d = DirichletBC(self.W.sub(3), '0.0', "near(x[0], 1.0) && on_boundary")
+        bcq = DirichletBC(self.W.sub(0), '0.0', "near(x[0], 0.0) && on_boundary")
+        self.bc = [bcq, bcc_d]
 
+        self.generate_form()
+        
         # initialise plotting
         if self.plot:
-            self.plotter = sw_output.Plotter(self)
+            self.plotter = sw_io.Plotter(self)
 
-        # define form of equations
-        self.form()
+    def generate_form(self):
 
-    def initialise_functions(self):
-        # define function dictionaries for prognostic variables
-        self.h = dict([[i, Function(self.h_ic, name='h_{}'.format(i))] for i in range(2)])
-        # self.phi = dict([[i, Function(phi_ic, name='phi_{}'.format(i))] for i in range(2)])
-        self.c_d = dict([[i, Function(self.c_d_ic, name='c_d_{}'.format(i))] for i in range(2)])
-        self.q = dict([[i, Function(self.q_ic, name='q_{}'.format(i))] for i in range(2)])
-        self.x_N = dict([[i, Function(self.x_N_ic, name='x_N_{}'.format(i))] for i in range(2)])
-        self.u_N = dict([[i, Function(self.u_N_ic, name='u_N_{}'.format(i))] for i in range(2)])
-        self.phi = dict()
-        # self.phi[0] = project(self.phi_ic, self.h_CG)
-        self.phi[0] = Function(self.phi_ic, name="phi_0")
-        self.phi[1] = project(self.phi[0], self.h_CG)
-        X_ = project(Expression('x[0]'), self.h_CG)
+        # initialise functions
+        X_ = project(Expression('x[0]'), self.X_FS)
         self.X = Function(X_, name='X')
 
-        # left boundary marked as 0, right as 1
-        class LeftBoundary(SubDomain):
-            def inside(self, x, on_boundary):
-                return x[0] < 0.5 + DOLFIN_EPS and on_boundary
-        left_boundary = LeftBoundary()
-        exterior_facet_domains = FacetFunction("uint", self.mesh)
-        exterior_facet_domains.set_all(1)
-        left_boundary.mark(exterior_facet_domains, 0)
-        self.ds = Measure("ds")[exterior_facet_domains] 
+        self.w = dict()
+        self.w[0] = Function(self.W, name='U')
 
-    def form(self):
+        # galerkin projection of initial conditions on to w
+        test = TestFunction(self.W)
+        trial = TrialFunction(self.W)
+        a = 0; L = 0
+        for i in range(len(self.w_ic)):
+            a += inner(test[i], trial[i])*dx 
+            L += inner(test[i], self.w_ic[i])*dx
+        # i = 2
+        # a += inner(test[i], trial[i])*dx 
+        # L += inner(test[i], self.w_ic[i])*dx
+        solve(a == L, self.w[0], solver_parameters={"linear_solver": "mumps"})
 
-        def smoothed_min(val, min, eps):
-            return 0.5*(((val - min - eps)**2.0)**0.5 + min + val)
+        # # copy to w[1]
+        # self.w[1] = project(self.w[0], self.W)
 
-        self.k = Constant(self.timestep)
+        # # smooth minimum function
+        # def smoothed_min(val, min, eps):
+        #     return 0.5*(((val - min - eps)**2.0)**0.5 + min + val)
 
-        # time discretisation of values
-        def time_discretise(u):
-            return 0.5*u[0] + 0.5*u[1]
+        # # define 1/dt
+        # self.k = Constant(self.timestep)
 
-        x_N_td = time_discretise(self.x_N)
-        inv_x_N = 1./x_N_td
-        u_N_td = time_discretise(self.u_N)
-        h_td = time_discretise(self.h)
-        smoothed_min(h_td, 1e-8, 1e-10)
-        phi_td = time_discretise(self.phi)
-        c_d_td = time_discretise(self.c_d)
-        q_td = time_discretise(self.q)
+        # # time discretisation of values
+        # def time_discretise(u):
+        #     return 0.5*u[0] + 0.5*u[1]
 
-        # momentum
-        q_N = u_N_td*h_td
-        u = q_td/h_td
-        # alpha = 0.0 
-        alpha = self.b*self.dX*(abs(u)+u+(phi_td*h_td)**0.5)*h_td
-        self.F_q = self.v2*(self.q[0] - self.q[1])*dx + \
-            inv_x_N*self.v2*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*self.k*dx + \
-            inv_x_N*u_N_td*grad(self.v2*self.X)*q_td*self.k*dx - \
-            inv_x_N*u_N_td*self.v2*self.X*q_N*self.n*self.k*self.ds(1) + \
-            inv_x_N*grad(self.v2)*alpha*grad(u)*self.k*dx - \
-            inv_x_N*self.v2*alpha*grad(u)*self.n*self.k*self.ds(1) 
-            # inv_x_N*self.v2*alpha*Constant(-0.22602295050021465)*self.n*self.k*self.ds(1) 
-        if self.mms:
-            self.F_q = self.F_q + self.v2*self.s_q*self.k*dx
+        # q = dict()
+        # h = dict()
+        # phi = dict()
+        # c_d = dict()
+        # u_N = dict()
+        # x_N = dict()
 
-        # conservation
-        self.F_h = self.v1*(self.h[0] - self.h[1])*dx + \
-            inv_x_N*self.v1*grad(q_td)*self.k*dx - \
-            inv_x_N*self.v1*self.X*u_N_td*grad(h_td)*self.k*dx 
-        if self.mms:
-            self.F_h = self.F_h + self.v1*self.s_h*self.k*dx
+        # q[0], h[0], phi[0], c_d[0], u_N[0], x_N[0] = split(self.w[0])
+        # q[1], h[1], phi[1], c_d[1], u_N[1], x_N[1] = split(self.w[1])
 
-        # concentration
-        self.F_phi = self.v1*(self.phi[0] - self.phi[1])*dx + \
-            inv_x_N*self.v1*grad(q_td*phi_td/h_td)*self.k*dx - \
-            inv_x_N*self.v1*self.X*u_N_td*grad(phi_td)*self.k*dx + \
-            self.v1*self.u_sink*phi_td/h_td*self.k*dx 
-        if self.mms:
-            self.F_phi = self.F_phi + self.v1*self.s_phi*self.k*dx
+        # x_N_td = time_discretise(x_N)
+        # inv_x_N = 1./x_N_td
+        # u_N_td = time_discretise(u_N)
+        # h_td = time_discretise(h)
+        # smoothed_min(h_td, 1e-8, 1e-10)
+        # phi_td = time_discretise(phi)
+        # c_d_td = time_discretise(c_d)
+        # q_td = time_discretise(q)
 
-        # nose location/speed
-        self.F_u_N = self.r*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
-            self.r*self.u_N[0]*self.ds(1)
-        self.F_x_N = self.r*(self.x_N[0] - self.x_N[1])*dx - self.r*u_N_td*self.k*dx 
+        # # momentum
+        # q_N = u_N_td*h_td
+        # u = q_td/h_td
+        # # alpha = 0.0 
+        # alpha = self.b*self.dX*(abs(u)+u+(phi_td*h_td)**0.5)*h_td
+        # F_q = self.q_tf*(q[0] - q[1])*dx + \
+        #     inv_x_N*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*self.k*dx + \
+        #     inv_x_N*u_N_td*grad(self.q_tf*self.X)*q_td*self.k*dx - \
+        #     inv_x_N*u_N_td*self.q_tf*self.X*q_N*self.n*self.k*self.ds(1) + \
+        #     inv_x_N*grad(self.q_tf)*alpha*grad(u)*self.k*dx - \
+        #     inv_x_N*self.q_tf*alpha*grad(u)*self.n*self.k*self.ds(1) 
+        #     # inv_x_N*self.q_tf*alpha*Constant(-0.22602295050021465)*self.n*self.k*self.ds(1) 
+        # if self.mms:
+        #     F_q = F_q + self.q_tf*self.s_q*self.k*dx
 
-        # deposit
-        self.F_c_d = self.v1*(self.c_d[0] - self.c_d[1])*dx - \
-            inv_x_N*self.v1*self.X*u_N_td*grad(c_d_td)*self.k*dx - \
-            self.v1*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx
-        if self.mms:
-            self.F_c_d = self.F_c_d + self.v1*self.s_c_d*self.k*dx
+        # # conservation
+        # F_h = self.h_tf*(h[0] - h[1])*dx + \
+        #     inv_x_N*self.h_tf*grad(q_td)*self.k*dx - \
+        #     inv_x_N*self.h_tf*self.X*u_N_td*grad(h_td)*self.k*dx 
+        # if self.mms:
+        #     F_h = F_h + self.h_tf*self.s_h*self.k*dx
+
+        # # concentration
+        # F_phi = self.phi_tf*(phi[0] - phi[1])*dx + \
+        #     inv_x_N*self.phi_tf*grad(q_td*phi_td/h_td)*self.k*dx - \
+        #     inv_x_N*self.phi_tf*self.X*u_N_td*grad(phi_td)*self.k*dx + \
+        #     self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx 
+        # if self.mms:
+        #     F_phi = F_phi + self.phi_tf*self.s_phi*self.k*dx
+
+        # # nose location/speed
+        # F_u_N = self.u_N_tf*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
+        #     self.u_N_tf*u_N[0]*self.ds(1)
+        # if self.mms:
+        #     F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*Constant(0.0)*self.k*dx
+        # else:
+        #     F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*u_N_td*self.k*dx 
+
+        # # deposit
+        # F_c_d = self.c_d_tf*(c_d[0] - c_d[1])*dx - \
+        #     inv_x_N*self.c_d_tf*self.X*u_N_td*grad(c_d_td)*self.k*dx - \
+        #     self.c_d_tf*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx
+        # if self.mms:
+        #     F_c_d = F_c_d + self.c_d_tf*self.s_c_d*self.k*dx
+
+        # self.F = F_q + F_h + F_phi + F_c_d + F_u_N + F_x_N
+
+        # # Compute directional derivative about u in the direction of du (Jacobian)
+        # self.dw = TrialFunction(self.W)
+        # self.J = derivative(self.F, self.w[0], self.dw)
 
     def solve(self, T = None, tol = None, nl_tol = 1e-5):
 
@@ -224,70 +255,34 @@ class Model():
                 if du < tol:
                     return True
             return False
-        
-        # if not self.mms:
-        #     adj_start_timestep()
 
         self.t = 0.0
-        du = 1e10
-        while not (time_finish(self.t) or converged(du)):
+        delta = 1e10
+        while not (time_finish(self.t) or converged(delta)):
             
-            # THIS IS WHERE ADAPTIVE TIMESTEP WILL GO
-            self.k.assign(self.timestep)
-
-            # if self.t > self.timestep*6 and not self.mms:
-            #     parameters["adjoint"]["stop_annotating"] = False
-
-            ss = 1.0
-            nl_its = 0
-            while (nl_its < 2 or du_nl > nl_tol):
-
-                # VALUES FOR CONVERGENCE TEST
-                h_nl = self.h[0].copy(deepcopy=True)
-                phi_nl = self.phi[0].copy(deepcopy=True)
-                q_nl = self.q[0].copy(deepcopy=True)
-                x_N_nl = self.x_N[0].copy(deepcopy=True)
-
-                # SOLVE COUPLED EQUATIONS
-                solve(self.F_q == 0, self.q[0], self.bcq)
-                solve(self.F_h == 0, self.h[0], self.bch)
-                solve(self.F_phi == 0, self.phi[0], self.bcphi)
-                solve(self.F_u_N == 0, self.u_N[0])
-                if not self.mms:
-                    solve(self.F_x_N == 0, self.x_N[0])
-
-                dh = errornorm(h_nl, self.h[0], norm_type="L2", degree_rise=1)
-                dphi = errornorm(phi_nl, self.phi[0], norm_type="L2", degree_rise=1)
-                dq = errornorm(q_nl, self.q[0], norm_type="L2", degree_rise=1)
-                dx_N = errornorm(x_N_nl, self.x_N[0], norm_type="L2", degree_rise=1)
-                du_nl = max(dh, dphi, dq, dx_N)/self.timestep
-
-                nl_its += 1
+            # SOLVE COUPLED EQUATIONS
+            solve(self.F == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
             
-            # SOLVE NON-COUPLED EQUATIONS
-            solve(self.F_c_d == 0, self.c_d[0], self.bcc_d)
+            delta = 0.0
+            f_list = [[self.w[0].split()[i], self.w[1].split()[i]] for i in range(len(self.w[0].split()))]
+            for f_0, f_1 in f_list:
+                delta = max(errornorm(f_0, f_1, norm_type="L2", degree_rise=1)/self.timestep, delta)
 
-            dh = errornorm(self.h[0], self.h[1], norm_type="L2", degree_rise=1)
-            dphi = errornorm(self.phi[0], self.phi[1], norm_type="L2", degree_rise=1)
-            dq = errornorm(self.q[0], self.q[1], norm_type="L2", degree_rise=1)
-            dx_N = errornorm(self.x_N[0], self.x_N[1], norm_type="L2", degree_rise=1)
-            du = max(dh, dphi, dq, dx_N)/self.timestep
-
-            self.h[1].assign(self.h[0])
-            self.phi[1].assign(self.phi[0])
-            self.c_d[1].assign(self.c_d[0])
-            self.q[1].assign(self.q[0])
-            self.x_N[1].assign(self.x_N[0])
-            self.u_N[1].assign(self.u_N[0])
+            self.w[1].assign(self.w[0])
 
             self.t += self.timestep
+            
+            # ADAPTIVE TIMESTEP
+            # timestep = ...
+            # self.k.assign(self.timestep)
+
             # display results
             if self.plot:
                 self.plotter.update_plot(self)
-            sw_output.print_timestep_info(self, nl_its, du)
+            sw_io.print_timestep_info(self, delta)
 
-            # if not self.mms:
-            #     adj_inc_timestep() 
+            # plot(self.w[0].split()[3], rescale=True)
+            # interactive()
 
 if __name__ == '__main__':
 
@@ -308,61 +303,47 @@ if __name__ == '__main__':
     model = Model()
 
     # Adjoint 
-    elif options.adjoint == True:
+    if options.adjoint == True:
 
         model.plot = False
         model.initialise_function_spaces()
 
-        f = open('deposit_data.json','r')
-        json_string = f.readline()
-        data = np.array(json.loads(json_string))
-        c_d_aim = Function(model.h_CG)
-        c_d_aim.vector()[:] = data
-        print c_d_aim.vector().array()
-
-        f = open('length_data.json','r')
-        json_string = f.readline()
-        data = np.array(json.loads(json_string))
-        x_N_aim = Function(model.R)
-        x_N_aim.vector()[:] = data
-        print x_N_aim.vector().array()
-
-        phi_ic = project(Expression('0.01'), model.h_CG)
+        phi_ic = project(Constant(0.01), model.phi_FS)
         model.setup(phi_ic = phi_ic)
         model.solve(T = options.T)
 
         adj_html("forward.html", "forward")
         adj_html("adjoint.html", "adjoint")
 
-        # functional components
+        # get model data
+        c_d_aim = sw_io.create_function_from_file('deposit_data.json', model.phi_FS)
+        x_N_aim = sw_io.create_function_from_file('runout_data.json', model.var_N_FS)
+        q, h, phi, c_d, u_N, x_N = model.w[0].split()
+
+        # form Functional integrals
         int_0_scale = Constant(1)
-        int_0_scale_2 = Constant(1)
         int_1_scale = Constant(1)
+        int_0 = inner(c_d-c_d_aim, c_d-c_d_aim)*int_0_scale*dx
+        int_1 = inner(x_N-x_N_aim, x_N-x_N_aim)*int_1_scale*dx
 
-        int_0 = inner(model.c_d[0]-c_d_aim, model.c_d[0]-c_d_aim)*int_0_scale*dx
-        int_0_2_d = inner(grad(model.c_d[0])-grad(c_d_aim), grad(model.c_d[0])-grad(c_d_aim))*int_0_scale_2
-        int_0_2 = int_0_2_d*ds(0) + int_0_2_d*ds(1)
-        int_1 = inner(model.x_N[0]-x_N_aim, model.x_N[0]-x_N_aim)*int_1_scale*dx
-
+        # determine scalaing
         int_0_scale.assign(1e-2/assemble(int_0))
-        int_0_scale_2.assign(0) # 1e-4/assemble(int_0_2))
         int_1_scale.assign(1e-4/assemble(int_1))
         print assemble(int_0)
-        print assemble(int_0_2)
         print assemble(int_1)
         ### int_0 1e-2, int_1 1e-4 - worked well
         
         ## functional regularisation
         reg_scale = Constant(1)
-        int_reg = inner(grad(model.phi[0]), grad(model.phi[0]))*reg_scale*dx
+        int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
         reg_scale_base = 1e-2
         reg_scale.assign(reg_scale_base)
 
         ## functional
-        J = Functional((int_0 + int_0_2 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
+        J = Functional((int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
 
         ## display gradient information
-        dJdphi = compute_gradient(J, InitialConditionParameter("phi_0"))
+        dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic))
 
         import matplotlib.pyplot as plt
         fig = plt.figure()
@@ -374,18 +355,13 @@ if __name__ == '__main__':
         IPython.embed()
 
         # clear old data
-        f = open('phi_ic_adj.json','w')
-        f.close()
-
+        sw_io.clear_file('phi_ic_adj.json')
         j_log = []
 
         def eval_cb(j, m):
             print "* * * Completed forward model"
-            print "j = {}".format(j)
             j_log.append(j)
-            f = open('j_log.json','w')
-            f.write(json.dumps(j_log))
-            f.close()
+            sw_io.write_array_to_file('j_log.json', j_log, 'w')
 
         ##############################
         #### REDUCED FUNCTIONAL HACK
@@ -396,15 +372,9 @@ if __name__ == '__main__':
             def __call__(self, value):
 
                 #### initial condition dump hack ####
-                ic = list(value[0].vector().array())
-                f = open('phi_ic_adj_latest.json','w')
-                f.write(json.dumps(ic))
-                f.write('\n')
-                f.close()
-                f = open('phi_ic_adj.json','a')
-                f.write(json.dumps(ic))
-                f.write('\n')
-                f.close()
+                ic = value[0].vector().array()
+                sw_io.write_array_to_file('phi_ic_adj_latest.json',ic,'w')
+                sw_io.write_array_to_file('phi_ic_adj.json',ic,'a')
 
                 print "\n* * * Computing forward model"
 
@@ -414,7 +384,7 @@ if __name__ == '__main__':
         #### END OF REDUCED FUNCTIONAL HACK
         #######################################
 
-        reduced_functional = MyReducedFunctional(J, InitialConditionParameter("phi_0"),
+        reduced_functional = MyReducedFunctional(J, InitialConditionParameter(phi_ic),
                                                  eval_cb = eval_cb,
                                                  scale = 1e-0)
         
@@ -433,7 +403,7 @@ if __name__ == '__main__':
         f = open('phi_ic_adj_latest.json','r')
         json_string = f.readline()
         data = np.array(json.loads(json_string))
-        phi_ic = Function(model.h_CG)
+        phi_ic = Function(model.phi_FS)
         phi_ic.vector()[:] = data
         
         model.setup(phi_ic = phi_ic)
@@ -442,22 +412,16 @@ if __name__ == '__main__':
 
     else:        
 
+        # model.plot = False
         model.initialise_function_spaces()
-        phi_ic = project(Expression('0.03+0.005*sin(2*pi*x[0])'), model.h_CG)
+        phi_ic = project(Expression('0.03+0.005*sin(2*pi*x[0])'), model.phi_FS)
         model.setup(phi_ic=phi_ic)
-        data = list(model.phi[0].vector().array())
-        f = open('phi_ic.json','w')
-        f.write(json.dumps(data))
-        f.close()
+
+        q, h, phi, c_d, u_N, x_N = sw_io.map_to_arrays(model)
+        sw_io.write_array_to_file('phi_ic.json', phi, 'w')
 
         model.solve(T = options.T)
 
-        data = list(model.c_d[0].vector().array())
-        f = open('deposit_data.json','w')
-        f.write(json.dumps(data))
-        f.close()
-
-        data = list(model.x_N[0].vector().array())
-        f = open('length_data.json','w')
-        f.write(json.dumps(data))
-        f.close()
+        q, h, phi, c_d, u_N, x_N = sw_io.map_to_arrays(model)
+        sw_io.write_array_to_file('deposit_data.json', c_d, 'w')
+        sw_io.write_array_to_file('runout_data.json', x_N, 'w')
