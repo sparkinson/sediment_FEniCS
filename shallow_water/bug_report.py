@@ -19,14 +19,17 @@ def main(ic):
     
     solve(a == L, w, solver_parameters={"linear_solver": "mumps"})
 
-ic = project(Constant(1.0), FS)     # this doesn't work
+ic = project(Constant(1.0), FS, annotate=False)     # this doesn't work
 # ic = project(Expression('1.0'), FS)    # this works
 
 main(ic)
 
 J = Functional(inner(w, w)*dx*dt[FINISH_TIME])
 dJdv = compute_gradient(J, InitialConditionParameter(ic))
+print dJdv.vector().array()
 Jv = assemble(inner(w, w)*dx)
+
+adj_html('forward.html', 'forward')
 
 parameters["adjoint"]["stop_annotating"] = True 
 

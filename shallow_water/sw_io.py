@@ -19,7 +19,7 @@ class Plotter():
             h_y_lim = 0.5
             u_y_lim = 0.5
             phi_y_lim = 0.01
-            c_d_y_lim = 3.0e-5
+            c_d_y_lim = 1.0e-5
         
         self.x = np.linspace(0.0, x_max, 10001)
         self.fig = plt.figure(figsize=(16, 12), dpi=50)
@@ -39,7 +39,7 @@ class Plotter():
         self.c_d_plot.set_autoscaley_on(False)
         self.c_d_plot.set_ylim([0.0,c_d_y_lim])
         
-        q, h, phi, c_d, u_N, x_N = map_to_arrays(model)
+        q, h, phi, c_d, x_N, u_N = map_to_arrays(model)
         
         self.vel_line, = self.vel_plot.plot(self.x, self.y_data(model, q/h), 'r-')
         self.h_line, = self.h_plot.plot(self.x, self.y_data(model, h), 'r-')
@@ -51,7 +51,7 @@ class Plotter():
 
     def update_plot(self, model):
         
-        q, h, phi, c_d, u_N, x_N = map_to_arrays(model)
+        q, h, phi, c_d, x_N, u_N = map_to_arrays(model)
         
         self.vel_line.set_ydata(self.y_data(model, q/h))
         self.h_line.set_ydata(self.y_data(model, h))
@@ -72,7 +72,7 @@ class Plotter():
 
 def print_timestep_info(model, delta):
     
-    q, h, phi, c_d, u_N, x_N = map_to_arrays(model)
+    q, h, phi, c_d, x_N, u_N = map_to_arrays(model)
         
     mass = (h[:model.L/model.dX_ + 1]*(x_N[0]*model.dX_)).sum()
 
@@ -91,10 +91,10 @@ def map_to_arrays(model):
     h = np.array([model.w[0].vector().array()[i] for i in model.map_dict[1]])
     phi = np.array([model.w[0].vector().array()[i] for i in model.map_dict[2]])
     c_d = np.array([model.w[0].vector().array()[i] for i in model.map_dict[3]])
-    u_N = np.array([model.w[0].vector().array()[i] for i in model.map_dict[4]])
-    x_N = np.array([model.w[0].vector().array()[i] for i in model.map_dict[5]])
+    x_N = np.array([model.w[0].vector().array()[i] for i in model.map_dict[4]])
+    u_N = np.array([model.w[0].vector().array()[i] for i in model.map_dict[5]])
     
-    return q, h, phi, c_d, u_N, x_N
+    return q, h, phi, c_d, x_N, u_N
 
 def set_model_ic_from_file():
     print 'Not implemented'
@@ -110,8 +110,10 @@ def create_function_from_file(fname, fs):
 def write_array_to_file(fname, arr, method):
     f = open(fname, method)
     f.write(json.dumps(list(arr)))
+    if method == 'a':
+        f.write('\n')
     f.close()
 
 def clear_file(fname):
-    f = open(fname)
+    f = open(fname, 'w')
     f.close()

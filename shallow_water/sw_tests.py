@@ -35,8 +35,8 @@ class MMS_Model(sw.Model):
                         mms.h(),
                         mms.phi(),
                         mms.c_d(),
-                        mms.u_N(), 
-                        'pi'
+                        'pi',
+                        mms.u_N(),
                         )
                     , self.W.ufl_element())), self.W)
 
@@ -69,20 +69,17 @@ def mms_test():
     def getError(model):
         Fh = FunctionSpace(model.mesh, "CG", model.h_degree + 1)
         Fq = FunctionSpace(model.mesh, "CG", model.q_degree + 1)
-        Fr = FunctionSpace(model.mesh, "R", 0)
 
         S_h = project(Expression(mms.h(), degree=5), Fh)
         S_phi = project(Expression(mms.phi(), degree=5), Fh)
         S_q = project(Expression(mms.q(), degree=5), Fq)
-        S_u_N = project(Expression(mms.u_N(), degree=5), Fr)
 
-        q, h, phi, c_d, u_N, x_N = model.w[0].split()
+        q, h, phi, c_d, x_N, u_N = model.w[0].split()
         Eh = errornorm(h, S_h, norm_type="L2", degree_rise=2)
         Ephi = errornorm(phi, S_phi, norm_type="L2", degree_rise=2)
         Eq = errornorm(q, S_q, norm_type="L2", degree_rise=2)
-        Eu_N = errornorm(u_N, S_u_N, norm_type="L2", degree_rise=2)
 
-        return Eh, Ephi, Eq, Eu_N        
+        return Eh, Ephi, Eq        
 
     model = MMS_Model()
     model.plot = False
@@ -112,20 +109,12 @@ def taylor_tester():
     
     info_blue('Taylor test for phi')
 
-    phi_ic = project(Expression('0.01'), model.phi_FS)
+    phi_ic = project(Expression('1.0'), model.phi_FS)
     model.setup(phi_ic = phi_ic)
-    # w_ic = project(Expression(['(1.0 - cos((x[0]/{0})*pi))*{1}/2.0'
-    #                            .format(model.L, model.Fr_*0.01**0.5*model.h_0), 
-    #                            '0.4',
-    #                            '0.01',
-    #                            '0.0',
-    #                            '{0}'.format(model.Fr_*phi_ic.vector().array()[-1]**0.5),
-    #                            '0.2'], model.W.ufl_element()), model.W)
-    # model.setup(w_ic = w_ic)
-    # model.solve(T = 0.03)       
+    model.solve(T = 0.03)       
 
     w_0 = model.w[0]
-    (q, h, phi_000, c_d, u_N, x_N) = split(w_0)
+    (q, h, phi_000, c_d, x_N, u_N) = split(w_0)
     J = Functional(inner(w_0, w_0)*dx*dt[FINISH_TIME])
     Jw = assemble(inner(w_0, w_0)*dx)
 
@@ -134,21 +123,13 @@ def taylor_tester():
     dJdw = compute_gradient(J, InitialConditionParameter(phi_ic))    
     def Jhat(phi_ic):
         model.setup(phi_ic = phi_ic)
-        # model.solve(T = 0.03)
-        (q, h, phi, c_d, u_N, x_N) = split(w_0)
+        model.solve(T = 0.03)
+        w_0 = model.w[0]
+        (q, h, phi_000, c_d, x_N, u_N) = split(w_0)
         print 'Jhat: ', assemble(inner(w_0, w_0)*dx)
         return assemble(inner(w_0, w_0)*dx)
-    conv_rate = taylor_test(Jhat, InitialConditionParameter(phi_ic), Jw, dJdw, value = phi_ic, seed=1e-4)
+    conv_rate = taylor_test(Jhat, InitialConditionParameter(phi_ic), Jw, dJdw, value = phi_ic, seed=1e-2)
 
-    # dJdw = compute_gradient(J, InitialConditionParameter(w_ic))    
-    # def Jhat(w_ic):
-    #     model.setup(w_ic = w_ic)
-    #     model.solve(T = 0.03)
-    #     (q, h, phi, c_d, u_N, x_N) = split(w_0)
-    #     print 'Jhat: ', assemble(inner(w_0, w_0)*dx)
-    #     return assemble(inner(w_0, w_0)*dx)
-    # conv_rate = taylor_test(Jhat, InitialConditionParameter(w_ic), Jw, dJdw, value = w_ic, seed=1e-4)
-    
     info_blue('Minimum convergence order with adjoint information = {}'.format(conv_rate))
     if conv_rate > 1.9:
         info_blue('*** test passed ***')

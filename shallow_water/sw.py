@@ -21,7 +21,7 @@ solver_parameters = {}
 solver_parameters["linear_solver"] = "gmres"
 # info(parameters, True)
 # set_log_active(False)
-set_log_level(PROGRESS)
+set_log_level(ERROR)
 
 ############################################################
 # TIME DISCRETISATION FUNCTIONS
@@ -35,7 +35,7 @@ class Model():
     L = 1.0
 
     # stabilisation
-    b_ = 0.0
+    b_ = 0.1
 
     # current properties
     c_0 = 0.00349
@@ -47,7 +47,7 @@ class Model():
     u_sink_ = 1e-3
 
     # time step
-    timestep = 1e-2
+    timestep = 5e-3
 
     # mms test (default False)
     mms = False
@@ -125,18 +125,31 @@ class Model():
                 phi_N = self.c_0*self.rho_R_*self.g_*self.h_0
             else:
                 phi_N = phi_ic.vector().array()[-1]
+
+            # set u_N component
+            trial = TrialFunction(self.var_N_FS)
+            test = TestFunction(self.var_N_FS)
+            u_N_ic = Function(self.var_N_FS)
+            a = inner(test, trial)*self.ds(1)
+            L = inner(test, self.Fr*phi_ic**0.5)*self.ds(1)             
+            solve(a == L, u_N_ic)
+
             if type(q_ic) == type(None):
-                q_ic = Expression('(1.0 - cos((x[0]/{0})*pi))*{1}/2.0'
-                                  .format(self.L, self.Fr_*phi_N**0.5*h_N))
+                trial = TrialFunction(self.q_FS)
+                test = TestFunction(self.q_FS)
+                q_ic = Function(self.q_FS)
+                a = inner(test, trial)*dx
+                L = inner(test, (1.0 - cos(self.X*np.pi))/2.0*u_N_ic*h_ic)*dx             
+                solve(a == L, q_ic)
 
             self.w_ic = [
                 q_ic, 
                 h_ic, 
                 phi_ic, 
                 Function(self.phi_FS), 
-                Constant(self.x_N_)
+                Constant(self.x_N_), 
+                u_N_ic
                 ]
-
             
         else:
             self.w_ic = w_ic
@@ -144,10 +157,9 @@ class Model():
         # define bc's
         bcc_d = DirichletBC(self.W.sub(3), '0.0', "near(x[0], 1.0) && on_boundary")
         bcq = DirichletBC(self.W.sub(0), '0.0', "near(x[0], 0.0) && on_boundary")
-        self.bc = [bcq, bcc_d]
+        self.bc = [bcq]#, bcc_d]
 
-        # self.generate_form()
-        self.generate_form_no_split()
+        self.generate_form()
         
         # initialise plotting
         if self.plot:
@@ -158,11 +170,13 @@ class Model():
         # galerkin projection of initial conditions on to w
         test = TestFunction(self.W)
         trial = TrialFunction(self.W)
-        a = 0; L = 0
+        
+        # set q, h, phi, c_d and x_N components
+        L = 0; a = 0
         for i in range(len(self.w_ic)):
-            a += inner(test[i], trial[i])*dx 
+            a += inner(test[i], trial[i])*dx
             L += inner(test[i], self.w_ic[i])*dx
-        solve(a == L, self.w[0], solver_parameters={"linear_solver": "mumps"})
+        solve(a == L, self.w[0], solver_parameters=solver_parameters)
 
         # copy to w[1]
         self.w[1] = project(self.w[0], self.W)
@@ -182,20 +196,20 @@ class Model():
         h = dict()
         phi = dict()
         c_d = dict()
-        u_N = dict()
         x_N = dict()
+        u_N = dict()
 
-        q[0], h[0], phi[0], c_d[0], u_N[0], x_N[0] = split(self.w[0])
-        q[1], h[1], phi[1], c_d[1], u_N[1], x_N[1] = split(self.w[1])
+        q[0], h[0], phi[0], c_d[0], x_N[0], u_N[0] = split(self.w[0])
+        q[1], h[1], phi[1], c_d[1], x_N[1], u_N[1] = split(self.w[1])
 
-        x_N_td = time_discretise(x_N)
-        inv_x_N = 1./x_N_td
-        u_N_td = time_discretise(u_N)
+        q_td = time_discretise(q)
         h_td = time_discretise(h)
         smoothed_min(h_td, 1e-8, 1e-10)
         phi_td = time_discretise(phi)
         c_d_td = time_discretise(c_d)
-        q_td = time_discretise(q)
+        x_N_td = time_discretise(x_N)
+        inv_x_N = 1./x_N_td
+        u_N_td = time_discretise(u_N)
 
         # momentum
         q_N = u_N_td*h_td
@@ -228,14 +242,6 @@ class Model():
         if self.mms:
             F_phi = F_phi + self.phi_tf*self.s_phi*self.k*dx
 
-        # nose location/speed
-        F_u_N = self.u_N_tf*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
-            self.u_N_tf*u_N[0]*self.ds(1)
-        if self.mms:
-            F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*Constant(0.0)*self.k*dx
-        else:
-            F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*u_N_td*self.k*dx 
-
         # deposit
         F_c_d = self.c_d_tf*(c_d[0] - c_d[1])*dx - \
             inv_x_N*self.c_d_tf*self.X*u_N_td*grad(c_d_td)*self.k*dx - \
@@ -243,101 +249,16 @@ class Model():
         if self.mms:
             F_c_d = F_c_d + self.c_d_tf*self.s_c_d*self.k*dx
 
-        # combine PDE's
-        self.F = F_q + F_h + F_phi + F_c_d + F_u_N + F_x_N
-
-        # Compute directional derivative about u in the direction of du (Jacobian)
-        self.J = derivative(self.F, self.w[0], trial)
-
-    def generate_form_no_split(self):
-
-        # galerkin projection of initial conditions on to w
-        test = TestFunction(self.W)
-        trial = TrialFunction(self.W)
-        a = 0; L = 0
-        for i in range(len(self.w_ic)):
-            a += inner(test[i], trial[i])*dx 
-            L += inner(test[i], self.w_ic[i])*dx
-        solve(a == L, self.w[0], solver_parameters={"linear_solver": "mumps"})
-
-        # copy to w[1]
-        self.w[1] = project(self.w[0], self.W)
-
-        # smooth minimum function
-        def smoothed_min(val, min, eps):
-            return 0.5*(((val - min - eps)**2.0)**0.5 + min + val)
-
-        # define 1/dt
-        self.k = Constant(self.timestep)
-
-        # time discretisation of values
-        def time_discretise(u0, u1):
-            return 0.5*u0 + 0.5*u1
-
-        q_td = time_discretise(self.w[0][0], self.w[1][0])
-        h_td = time_discretise(self.w[0][1], self.w[1][1])
-        smoothed_min(h_td, 1e-8, 1e-10)
-        phi_td = time_discretise(self.w[0][2], self.w[1][2])
-        c_d_td = time_discretise(self.w[0][3], self.w[1][3])
-        u_N_td = time_discretise(self.w[0][4], self.w[1][4])
-        x_N_td = time_discretise(self.w[0][5], self.w[1][5])
-        inv_x_N = 1./x_N_td
-
-        # momentum
-        q_N = u_N_td*h_td
-        u = q_td/h_td
-        abs_u = ((u + 1e-10)**2.0)**0.5
-        alpha = self.b*self.dX*(abs_u+u+(phi_td*h_td)**0.5)*h_td
-        # alpha = 0.0 
-        F_q = self.q_tf*(self.w[0][0] - self.w[1][0])*dx + \
-            inv_x_N*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*self.k*dx + \
-            inv_x_N*u_N_td*grad(self.q_tf*self.X)*q_td*self.k*dx - \
-            inv_x_N*u_N_td*self.q_tf*self.X*q_N*self.n*self.k*self.ds(1) + \
-            inv_x_N*grad(self.q_tf)*alpha*grad(u)*self.k*dx - \
-            inv_x_N*self.q_tf*alpha*grad(u)*self.n*self.k*self.ds(1) 
-            # inv_x_N*self.q_tf*alpha*Constant(-0.22602295050021465)*self.n*self.k*self.ds(1) 
-        if self.mms:
-            F_q = F_q + self.q_tf*self.s_q*self.k*dx
-
-        # conservation
-        F_h = self.h_tf*(self.w[0][1] - self.w[1][1])*dx + \
-            inv_x_N*self.h_tf*grad(q_td)*self.k*dx - \
-            inv_x_N*self.h_tf*self.X*u_N_td*grad(h_td)*self.k*dx 
-        if self.mms:
-            F_h = F_h + self.h_tf*self.s_h*self.k*dx
-
-        # concentration
-        F_phi = self.phi_tf*(self.w[0][2] - self.w[1][2])*dx + \
-            inv_x_N*self.phi_tf*grad(q_td*phi_td/h_td)*self.k*dx - \
-            inv_x_N*self.phi_tf*self.X*u_N_td*grad(phi_td)*self.k*dx + \
-            self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx 
-        if self.mms:
-            F_phi = F_phi + self.phi_tf*self.s_phi*self.k*dx
-
-        # deposit
-        F_c_d = self.c_d_tf*(self.w[0][3] - self.w[1][3])*dx - \
-            inv_x_N*self.c_d_tf*self.X*u_N_td*grad(c_d_td)*self.k*dx - \
-            self.c_d_tf*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx
-        if self.mms:
-            F_c_d = F_c_d + self.c_d_tf*self.s_c_d*self.k*dx
-
         # nose location/speed
-        F_u_N = self.u_N_tf*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
-            self.u_N_tf*self.w[0][4]*self.ds(1)
         if self.mms:
-            F_x_N = self.x_N_tf*(self.w[0][5] - self.w[1][5])*dx - self.x_N_tf*Constant(0.0)*self.k*dx
+            F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*Constant(0.0)*self.k*dx
         else:
-            F_x_N = self.x_N_tf*(self.w[0][5] - self.w[1][5])*dx - self.x_N_tf*u_N_td*self.k*dx 
-
-        # F_q = self.q_tf*(self.w[0][0] - self.w[1][0])*dx - self.q_tf*Constant(0.01)*self.k*dx
-        # F_h = self.h_tf*(self.w[0][1] - self.w[1][1])*dx - self.h_tf*Constant(0.01)*self.k*dx
-        # F_phi = self.phi_tf*(self.w[0][2] - self.w[1][2])*dx - self.phi_tf*Constant(0.01)*self.k*dx
-        # F_c_d = self.c_d_tf*(self.w[0][3] - self.w[1][3])*dx - self.c_d_tf*Constant(0.01)*self.k*dx
-        # F_u_N = self.u_N_tf*(self.w[0][4] - self.w[1][4])*dx - self.u_N_tf*Constant(0.01)*self.k*dx
-        # F_x_N = self.x_N_tf*(self.w[0][5] - self.w[1][5])*dx - self.x_N_tf*Constant(0.01)*self.k*dx
+            F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*u_N_td*self.k*dx 
+        F_u_N = self.u_N_tf*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
+            self.u_N_tf*u_N[0]*self.ds(1)
 
         # combine PDE's
-        self.F = F_q + F_h + F_phi + F_c_d + F_u_N + F_x_N
+        self.F = F_q + F_h + F_phi + F_c_d + F_x_N + F_u_N
 
         # Compute directional derivative about u in the direction of du (Jacobian)
         self.J = derivative(self.F, self.w[0], trial)
@@ -381,6 +302,11 @@ class Model():
                 self.plotter.update_plot(self)
             sw_io.print_timestep_info(self, delta)
 
+            # if self.t==0.0:
+            q, h, phi, c_d, x_N, u_N = sw_io.map_to_arrays(model)
+            import IPython
+            IPython.embed()
+
 if __name__ == '__main__':
 
     parser = OptionParser()
@@ -395,27 +321,26 @@ if __name__ == '__main__':
     parser.add_option('-T', '--end_time',
                       dest='T', type=float, default=0.2,
                       help='simulation end time')
+    parser.add_option('-p', '--plot',
+                      action='store_true', dest='plot', default=False,
+                      help='plot results in real-time')
     (options, args) = parser.parse_args()
     
     model = Model()
+    model.plot = options.plot
+    model.initialise_function_spaces()
 
     # Adjoint 
     if options.adjoint == True:
 
-        model.plot = False
-        model.initialise_function_spaces()
-
-        phi_ic = project(Constant(0.01), model.phi_FS)
+        phi_ic = project(Expression('0.01'), model.phi_FS)
         model.setup(phi_ic = phi_ic)
         model.solve(T = options.T)
-
-        adj_html("forward.html", "forward")
-        adj_html("adjoint.html", "adjoint")
 
         # get model data
         c_d_aim = sw_io.create_function_from_file('deposit_data.json', model.phi_FS)
         x_N_aim = sw_io.create_function_from_file('runout_data.json', model.var_N_FS)
-        q, h, phi, c_d, u_N, x_N = model.w[0].split()
+        (q, h, phi, c_d, x_N, u_N) = split(model.w[0])
 
         # form Functional integrals
         int_0_scale = Constant(1)
@@ -433,23 +358,23 @@ if __name__ == '__main__':
         ## functional regularisation
         reg_scale = Constant(1)
         int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
-        reg_scale_base = 1e-2
+        reg_scale_base = 1e-3
         reg_scale.assign(reg_scale_base)
 
         ## functional
         J = Functional((int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
 
-        ## display gradient information
+        ## compute gradient information
         dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic))
 
-        import matplotlib.pyplot as plt
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.plot(dJdphi.vector().array())
-        plt.show()
+        # import matplotlib.pyplot as plt
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111)
+        # ax.plot(dJdphi.vector().array())
+        # plt.show()
 
-        import IPython
-        IPython.embed()
+        # import IPython
+        # IPython.embed()
 
         # clear old data
         sw_io.clear_file('phi_ic_adj.json')
@@ -485,7 +410,7 @@ if __name__ == '__main__':
                                                  eval_cb = eval_cb,
                                                  scale = 1e-0)
         
-        for i in range(10):
+        for i in range(15):
             reg_scale.assign(reg_scale_base*2**(0-i))
 
             m_opt = minimize(reduced_functional, method = "L-BFGS-B", options = {'maxiter': 4, 'disp': True, 'gtol': 1e-9, 'ftol': 1e-9}, 
@@ -496,7 +421,6 @@ if __name__ == '__main__':
     # Adjoint 
     elif options.phi_ic_test == True:
 
-        model.initialise_function_spaces()
         f = open('phi_ic_adj_latest.json','r')
         json_string = f.readline()
         data = np.array(json.loads(json_string))
@@ -509,16 +433,14 @@ if __name__ == '__main__':
 
     else:        
 
-        # model.plot = False
-        model.initialise_function_spaces()
         phi_ic = project(Expression('0.03+0.005*sin(2*pi*x[0])'), model.phi_FS)
         model.setup(phi_ic=phi_ic)
 
-        q, h, phi, c_d, u_N, x_N = sw_io.map_to_arrays(model)
-        sw_io.write_array_to_file('phi_ic.json', phi, 'w')
+        q, h, phi, c_d, x_N, u_N = sw_io.map_to_arrays(model)
+        # sw_io.write_array_to_file('phi_ic.json', phi, 'w')
 
         model.solve(T = options.T)
 
-        q, h, phi, c_d, u_N, x_N = sw_io.map_to_arrays(model)
-        sw_io.write_array_to_file('deposit_data.json', c_d, 'w')
-        sw_io.write_array_to_file('runout_data.json', x_N, 'w')
+        q, h, phi, c_d, x_N, u_N = sw_io.map_to_arrays(model)
+        # sw_io.write_array_to_file('deposit_data.json', c_d, 'w')
+        # sw_io.write_array_to_file('runout_data.json', x_N, 'w')
