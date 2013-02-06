@@ -19,6 +19,9 @@ dolfin.parameters["optimization"]["test_gradient"] = False
 dolfin.parameters["optimization"]["test_gradient_seed"] = 0.1
 solver_parameters = {}
 solver_parameters["linear_solver"] = "gmres"
+solver_parameters["newton_solver"] = {}
+solver_parameters["newton_solver"]["maximum_iterations"] = 15
+solver_parameters["newton_solver"]["relaxation_parameter"] = 1.0
 # info(parameters, True)
 # set_log_active(False)
 set_log_level(ERROR)
@@ -33,9 +36,6 @@ class Model():
     # mesh
     dX_ = 5.0e-2
     L = 1.0
-
-    # stabilisation
-    b_ = 0.1
 
     # current properties
     c_0 = 0.00349
@@ -55,6 +55,18 @@ class Model():
     # display plot
     plot = True
 
+    # smoothing eps value
+    eps = 1e-10
+
+    # define stabilisation parameters
+    q_su = False
+    q_bs = True
+    q_b = Constant(0.1)
+    h_su = False
+    h_b = Constant(0.1)
+    phi_su = False
+    phi_b = Constant(0.1)
+
     def initialise_function_spaces(self):
 
         # define geometry
@@ -73,23 +85,33 @@ class Model():
 
         # define function spaces
         self.q_degree = 1
-        self.q_FS = FunctionSpace(self.mesh, "CG", self.q_degree)
+        self.q_disc = "CG"
+        self.q_FS = FunctionSpace(self.mesh, self.q_disc, self.q_degree)
         self.h_degree = 1
-        self.h_FS = FunctionSpace(self.mesh, "CG", self.h_degree)
+        self.h_disc = "CG"
+        self.h_FS = FunctionSpace(self.mesh, self.h_disc, self.h_degree)
         self.phi_degree = 1
-        self.phi_FS = FunctionSpace(self.mesh, "CG", self.h_degree)
+        self.phi_disc = "CG"
+        self.phi_FS = FunctionSpace(self.mesh, self.phi_disc, self.phi_degree)
+        self.c_d_degree = 1
+        self.c_d_disc = "DG"
+        self.c_d_FS = FunctionSpace(self.mesh, self.c_d_disc, self.c_d_degree)
         self.var_N_FS = FunctionSpace(self.mesh, "R", 0)
-        self.W = MixedFunctionSpace([self.q_FS, self.h_FS, self.phi_FS, self.phi_FS, self.var_N_FS, self.var_N_FS])
+        self.W = MixedFunctionSpace([self.q_FS, self.h_FS, self.phi_FS, self.c_d_FS, self.var_N_FS, self.var_N_FS])
         self.X_FS = FunctionSpace(self.mesh, "CG", 1)
 
         # get dof_maps for plots
         self.map_dict = dict()
         for i in range(6):
-            if len(self.W.sub(i).dofmap().dofs()) > 1:
-                self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j)[0] for j in range(len(self.W.sub(i).dofmap().dofs())-1)]
-                self.map_dict[i].append(self.W.sub(i).dofmap().cell_dofs(len(self.W.sub(i).dofmap().dofs())-2)[1])
-            else:
-                self.map_dict[i] = self.W.sub(i).dofmap().cell_dofs(0)
+            print len(self.W.sub(i).dofmap().dofs()), len(self.mesh.cells()) + 1, len(self.mesh.cells()) * 2
+            if len(self.W.sub(i).dofmap().dofs()) == len(self.mesh.cells()) + 1:   # CG 
+                self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j)[0] for j in range(len(self.mesh.cells()))]
+                self.map_dict[i].append(self.W.sub(i).dofmap().cell_dofs(len(self.mesh.cells()) - 1)[1])
+            elif len(self.W.sub(i).dofmap().dofs()) == len(self.mesh.cells()) * 2:   # DG
+                self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j) for j in range(len(self.mesh.cells()))]
+                self.map_dict[i] = list(np.array(self.map_dict[i]).flatten())
+            else:   # R
+                self.map_dict[i] = self.W.sub(i).dofmap().cell_dofs(0)              
 
         # define test functions
         (self.q_tf, self.h_tf, self.phi_tf, self.c_d_tf, self.x_N_tf, self.u_N_tf) = TestFunctions(self.W)
@@ -107,7 +129,6 @@ class Model():
         self.dX = Constant(self.dX_, name="dX")
         self.g = Constant(self.g_, name="g")
         self.rho_R = Constant(self.rho_R_, name="rho_R")
-        self.b = Constant(self.b_, name="b")
         self.Fr = Constant(self.Fr_, name="Fr")
         self.u_sink = Constant(self.u_sink_, name="u_sink")
 
@@ -115,13 +136,11 @@ class Model():
             # define initial conditions
             if type(h_ic) == type(None):
                 h_ic = Constant(self.h_0)
-                # h_ic = project(Expression('{}'.format(self.h_0)), self.h_FS)
                 h_N = self.h_0
             else:
                 h_N = h_ic.vector().array()[-1]
             if type(phi_ic) == type(None): 
                 phi_ic = Constant(self.c_0*self.rho_R_*self.g_*self.h_0)
-                # phi_ic = project(Expression('{}'.format(self.c_0*self.rho_R_*self.g_*self.h_0)), self.phi_FS)
                 phi_N = self.c_0*self.rho_R_*self.g_*self.h_0
             else:
                 phi_N = phi_ic.vector().array()[-1]
@@ -146,7 +165,7 @@ class Model():
                 q_ic, 
                 h_ic, 
                 phi_ic, 
-                Function(self.phi_FS), 
+                Function(self.c_d_FS), 
                 Constant(self.x_N_), 
                 u_N_ic
                 ]
@@ -176,14 +195,18 @@ class Model():
         for i in range(len(self.w_ic)):
             a += inner(test[i], trial[i])*dx
             L += inner(test[i], self.w_ic[i])*dx
-        solve(a == L, self.w[0], solver_parameters=solver_parameters)
+        solve(a == L, self.w[0])#, solver_parameters=solver_parameters)
 
         # copy to w[1]
         self.w[1] = project(self.w[0], self.W)
 
-        # smooth minimum function
-        def smoothed_min(val, min, eps):
-            return 0.5*(((val - min - eps)**2.0)**0.5 + min + val)
+        # smooth maximum function
+        def smooth_max(val, min):
+            return 0.5*(((val - min - self.eps)**2.0)**0.5 + min + val)
+
+        # smooth absolute function (avoids zero)
+        def smooth_abs(val):
+            return ((val + self.eps)**2.0)**0.5
 
         # define 1/dt
         self.k = Constant(self.timestep)
@@ -203,36 +226,48 @@ class Model():
         q[1], h[1], phi[1], c_d[1], x_N[1], u_N[1] = split(self.w[1])
 
         q_td = time_discretise(q)
-        h_td = time_discretise(h)
-        smoothed_min(h_td, 1e-8, 1e-10)
+        h_td = smooth_max(time_discretise(h), 1e-5)
         phi_td = time_discretise(phi)
         c_d_td = time_discretise(c_d)
         x_N_td = time_discretise(x_N)
         inv_x_N = 1./x_N_td
         u_N_td = time_discretise(u_N)
+        u_N_td_c = Constant(-1.0)*u_N_td
+
+        un_up = (self.X*u_N_td_c*self.n + smooth_abs(self.X*u_N_td_c*self.n))/2.0
+        un_down = (self.X*u_N_td_c*self.n - smooth_abs(self.X*u_N_td_c*self.n))/2.0
 
         # momentum
         q_N = u_N_td*h_td
-        u = q_td/h_td
-        abs_u = ((u + 1e-10)**2.0)**0.5
-        alpha = self.b*self.dX*(abs_u+u+(phi_td*h_td)**0.5)*h_td
-        # alpha = 0.0 
         F_q = self.q_tf*(q[0] - q[1])*dx + \
             inv_x_N*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*self.k*dx + \
             inv_x_N*u_N_td*grad(self.q_tf*self.X)*q_td*self.k*dx - \
-            inv_x_N*u_N_td*self.q_tf*self.X*q_N*self.n*self.k*self.ds(1) + \
-            inv_x_N*grad(self.q_tf)*alpha*grad(u)*self.k*dx - \
-            inv_x_N*self.q_tf*alpha*grad(u)*self.n*self.k*self.ds(1) 
-            # inv_x_N*self.q_tf*alpha*Constant(-0.22602295050021465)*self.n*self.k*self.ds(1) 
+            inv_x_N*u_N_td*self.q_tf*self.X*q_N*self.n*self.k*self.ds(1) 
+        if self.q_bs:
+            u = q_td/h_td
+            alpha = self.q_b*self.dX*(smooth_abs(u)+u+(phi_td*h_td)**0.5)*h_td
+            F_q += inv_x_N*grad(self.q_tf)*alpha*grad(u)*self.k*dx - \
+                inv_x_N*self.q_tf*alpha*grad(u)*self.n*self.k*self.ds(1) 
         if self.mms:
-            F_q = F_q + self.q_tf*self.s_q*self.k*dx
+            F_q += self.q_tf*self.s_q*self.k*dx
 
         # conservation
-        F_h = self.h_tf*(h[0] - h[1])*dx + \
-            inv_x_N*self.h_tf*grad(q_td)*self.k*dx - \
-            inv_x_N*self.h_tf*self.X*u_N_td*grad(h_td)*self.k*dx 
+        F_h = x_N_td*self.h_tf*(h[0] - h[1])*dx + \
+            self.k*self.h_tf*grad(q_td)*dx - \
+            self.k*u_N_td_c*grad(self.h_tf)*self.X*h_td*dx - \
+            self.k*u_N_td_c*self.h_tf*grad(self.X)*h_td*dx 
+        if self.h_disc == "CG":
+            F_h += self.k*u_N_td_c*self.h_tf*self.n*self.X*h_td*(self.ds(0) + self.ds(1))
+        elif self.h_disc == "DG":
+            F_h += avg(self.k)*jump(self.h_tf)*(un_up('+')*h_td('+') - un_up('-')*h_td('-'))*dS 
+            if self.mms:
+                F_h += self.k*self.h_tf*un_down*self.w_ic[1]*(self.ds(0) + self.ds(1))
+            else:
+                F_h += self.k*self.h_tf*un_down*h_td*(self.ds(0) + self.ds(1))
+        else:
+            sys.exit("unknown element type for h")
         if self.mms:
-            F_h = F_h + self.h_tf*self.s_h*self.k*dx
+            F_h = F_h + self.h_tf*x_N_td*self.s_h*self.k*dx
 
         # concentration
         F_phi = self.phi_tf*(phi[0] - phi[1])*dx + \
@@ -243,11 +278,18 @@ class Model():
             F_phi = F_phi + self.phi_tf*self.s_phi*self.k*dx
 
         # deposit
-        F_c_d = self.c_d_tf*(c_d[0] - c_d[1])*dx - \
-            inv_x_N*self.c_d_tf*self.X*u_N_td*grad(c_d_td)*self.k*dx - \
-            self.c_d_tf*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx
+        F_c_d = x_N_td*self.c_d_tf*(c_d[0] - c_d[1])*dx - \
+            self.k*u_N_td_c*grad(self.c_d_tf)*self.X*c_d_td*dx - \
+            self.k*u_N_td_c*self.c_d_tf*grad(self.X)*c_d_td*dx - \
+            x_N_td*self.c_d_tf*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx
+        if self.c_d_disc == "CG":
+            F_c_d += self.k*u_N_td_c*self.c_d_tf*self.n*self.X*c_d_td*self.ds(0)
+        elif self.c_d_disc == "DG":
+            F_c_d += avg(self.k)*jump(self.c_d_tf)*(un_up('+')*c_d_td('+') - un_up('-')*c_d_td('-'))*dS 
+            if self.mms:
+                F_c_d += self.k*self.c_d_tf*un_down*self.w_ic[3]*(self.ds(0) + self.ds(1))
         if self.mms:
-            F_c_d = F_c_d + self.c_d_tf*self.s_c_d*self.k*dx
+            F_c_d = F_c_d + x_N_td*self.c_d_tf*self.s_c_d*self.k*dx
 
         # nose location/speed
         if self.mms:
@@ -279,6 +321,7 @@ class Model():
 
         self.t = 0.0
         delta = 1e10
+
         while not (time_finish(self.t) or converged(delta)):
             
             # SOLVE COUPLED EQUATIONS
@@ -297,15 +340,17 @@ class Model():
             # timestep = ...
             # self.k.assign(self.timestep)
 
+            # plot(self.w[0][1], interactive = False, rescale = True)
+
             # display results
             if self.plot:
                 self.plotter.update_plot(self)
             sw_io.print_timestep_info(self, delta)
 
-            # if self.t==0.0:
-            q, h, phi, c_d, x_N, u_N = sw_io.map_to_arrays(model)
-            import IPython
-            IPython.embed()
+            # # if self.t==0.0:
+            # q, h, phi, c_d, x_N, u_N = sw_io.map_to_arrays(self)
+            # import IPython
+            # IPython.embed()
 
 if __name__ == '__main__':
 
@@ -437,10 +482,10 @@ if __name__ == '__main__':
         model.setup(phi_ic=phi_ic)
 
         q, h, phi, c_d, x_N, u_N = sw_io.map_to_arrays(model)
-        # sw_io.write_array_to_file('phi_ic.json', phi, 'w')
+        sw_io.write_array_to_file('phi_ic.json', phi, 'w')
 
         model.solve(T = options.T)
 
         q, h, phi, c_d, x_N, u_N = sw_io.map_to_arrays(model)
-        # sw_io.write_array_to_file('deposit_data.json', c_d, 'w')
-        # sw_io.write_array_to_file('runout_data.json', x_N, 'w')
+        sw_io.write_array_to_file('deposit_data.json', c_d, 'w')
+        sw_io.write_array_to_file('runout_data.json', x_N, 'w')

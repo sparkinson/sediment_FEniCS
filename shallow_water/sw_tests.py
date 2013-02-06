@@ -20,8 +20,7 @@ class MMS_Model(sw.Model):
         self.g = Constant(1.0)
         self.rho_R_ = 1.0
         self.rho_R = Constant(1.0)
-        self.b_ = 1.0 / dX_
-        self.b = Constant(1.0 / dX_)
+        self.q_b = Constant(1.0 / dX_)
         self.Fr_ = 1.0
         self.Fr = Constant(1.0)
         self.u_sink_ = 1.0
@@ -64,7 +63,7 @@ class MMS_Model(sw.Model):
         if self.plot:
             self.plotter = sw_io.Plotter(self)
 
-def mms_test():
+def mms_test(plot):
 
     def getError(model):
         Fh = FunctionSpace(model.mesh, "CG", model.h_degree + 1)
@@ -82,16 +81,16 @@ def mms_test():
         return Eh, Ephi, Eq        
 
     model = MMS_Model()
-    model.plot = False
+    model.plot = plot
     
     h = [] # element sizes
     E = [] # errors
-    for i, nx in enumerate([32, 64, 128, 256, 512, 1024]):
+    for i, nx in enumerate([64, 128, 256, 512]):
         dT = (pi/nx) * 0.5
         h.append(pi/nx)
         print 'dt is: ', dT, '; h is: ', h[-1]
         model.setup(h[-1], dT)
-        model.solve(tol = 5e-2)
+        model.solve(tol = 1e-1)
         E.append(getError(model))
 
     for i in range(1, len(E)):
@@ -101,10 +100,10 @@ def mms_test():
         print ( "h=%10.2E rh=%.2f rphi=%.2f rq=%.2f Eh=%.2e Ephi=%.2e Eq=%.2e" 
                     % (h[i], rh, rphi, rq, E[i][0], E[i][1], E[i][2]) )
 
-def taylor_tester():
+def taylor_tester(plot):
 
     model = sw.Model()
-    model.plot = False
+    model.plot = plot
     model.initialise_function_spaces()
     
     info_blue('Taylor test for phi')
@@ -147,13 +146,16 @@ if __name__ == '__main__':
     parser.add_option('-t', '--taylor_test',
                       action='store_true', dest='taylor_test', default=False,
                       help='adjoint taylor test')
+    parser.add_option('-p', '--plot',
+                      action='store_true', dest='plot', default=False,
+                      help='plot results in real-time')
     (options, args) = parser.parse_args()
 
     # MMS test
     if options.mms == True:
-        mms_test()
+        mms_test(options.plot)
 
     # taylor test
     if options.taylor_test == True:
-        taylor_tester()
+        taylor_tester(options.plot)
     

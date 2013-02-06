@@ -66,9 +66,16 @@ class Plotter():
         x_N = model.w[0].vector().array()[model.W.sub(5).dofmap().cell_dofs(0)]
 
         val_x = np.linspace(0.0, x_N, model.L/model.dX_ + 1)
-        val = u[:model.L/model.dX_ + 1]
+
+        if len(u) > len(val_x):
+            v = val_x
+            val_x = [v[0]]
+            for x in v[1:-1]:
+                val_x.append(x)
+                val_x.append(x)
+            val_x.append(v[-1])
         
-        return np.interp(self.x, val_x, val, right=0.0) 
+        return np.interp(self.x, val_x, u, right=0.0) 
 
 def print_timestep_info(model, delta):
     

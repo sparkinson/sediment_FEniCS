@@ -20,33 +20,38 @@ ds = Measure("ds")[exterior_facet_domains]
 
 ele_disc = "DG"
 ele_order = 1
-SU = False
-SU_scale = 0.1
+SU = True
+SU_scale = 0.01
 FS = FunctionSpace(mesh, ele_disc, ele_order)
 
 v = TestFunction(FS)
-u = dict([(i, project(Constant(1.0), FS)) for i in range(2)])
+u = dict([(i, project(Constant(0.0), FS)) for i in range(2)])
+X = project(Expression('x[0]'), FS)
 
-# bc = [DirichletBC(FS, '0.0', "near(x[0], 1.0) && on_boundary")]
+# bc = [DirichletBC(FS, '1.0', "near(x[0], 1.0) && on_boundary")]
 
 u_td = 0.5*u[0] + 0.5*u[1]
-u_N = Constant(-0.1)
-S = Constant(0.1)
+u_N = Constant(-0.025)
+S = Constant(0.01)
 k_ = 1e-1
 k = Constant(k_)
 
-un_up = (u_N*n + abs(u_N*n))/2.0
-F = v*(u[0] - u[1])*dx - grad(v)*u_N*u_td*k*dx 
+u_X = u_N*X
+un_up = (u_X*n + abs(u_X*n))/2.0
+un_up_bc = -(u_X*n - abs(u_X*n))/2.0
+F = v*(u[0] - u[1])*dx - grad(v)*u_X*u_td*k*dx - v*S*k*dx
 if ele_disc == "CG":
-    F += v*n*u_N*u_td*k*ds(0)  
+    F += v*n*u_X*u_td*k*ds(0)  
     if SU == True:
-        F += Constant(SU_scale)*h/abs(u_N)*inner(u_N, grad(v))*inner(u_N, grad(u_td))*k*dx   # stabilisation
+        tau = Constant(SU_scale)*h/((u_X + 1e-10)**2.0)**0.5
+        F += tau*inner(u_X, grad(v))*inner(u_X, grad(u_td))*k*dx - \
+            tau*inner(u_X, n*v)*inner(u_X, grad(u_td))*k*ds(0) # stabilisation
 else:
-    F += jump(v)*(un_up('+')*u_td('+') - un_up('-')*u_td('-'))*avg(k)*dS + v*un_up*u_td*k*ds(0)    
+    F += jump(v)*(un_up('+')*u_td('+') - un_up('-')*u_td('-'))*avg(k)*dS - v*un_up_bc*1.0*k*ds(1)   
 
 title = "{}{}".format(ele_order, ele_disc)
 if SU == True:
-    title = title + 'SU' + str(SU_scale)
+    title = title + 'SU' + str(SU_scale) 
 title = title + "_"
 file = File("{}.pvd".format(title))
 file << u[0]
@@ -54,9 +59,9 @@ file << u[0]
 t = 0.0
 t_save = 1.0
 
-while t<20.0:
+while t<100.0:
 
-    solve(F == 0, u[0]) #, bcs=bc)
+    solve(F == 0, u[0])#, bcs=bc)
     u[1].assign(u[0])
 
     t += k_
