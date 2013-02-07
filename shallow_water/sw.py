@@ -24,7 +24,7 @@ solver_parameters["newton_solver"]["maximum_iterations"] = 15
 solver_parameters["newton_solver"]["relaxation_parameter"] = 1.0
 # info(parameters, True)
 # set_log_active(False)
-set_log_level(ERROR)
+set_log_level(PROGRESS)
 
 ############################################################
 # TIME DISCRETISATION FUNCTIONS
@@ -56,16 +56,15 @@ class Model():
     plot = True
 
     # smoothing eps value
-    eps = 1e-10
+    eps = 1e-18
 
     # define stabilisation parameters
     q_su = False
     q_bs = True
-    q_b = Constant(0.1)
-    h_su = False
-    h_b = Constant(0.1)
-    phi_su = False
-    phi_b = Constant(0.1)
+    q_b = 0.1
+    h_b = 0.0
+    phi_b = 0.0
+    c_d_b = 0.0
 
     def initialise_function_spaces(self):
 
@@ -94,7 +93,7 @@ class Model():
         self.phi_disc = "CG"
         self.phi_FS = FunctionSpace(self.mesh, self.phi_disc, self.phi_degree)
         self.c_d_degree = 1
-        self.c_d_disc = "DG"
+        self.c_d_disc = "CG"
         self.c_d_FS = FunctionSpace(self.mesh, self.c_d_disc, self.c_d_degree)
         self.var_N_FS = FunctionSpace(self.mesh, "R", 0)
         self.W = MixedFunctionSpace([self.q_FS, self.h_FS, self.phi_FS, self.c_d_FS, self.var_N_FS, self.var_N_FS])
@@ -194,18 +193,18 @@ class Model():
         for i in range(len(self.w_ic)):
             a += inner(test[i], trial[i])*dx
             L += inner(test[i], self.w_ic[i])*dx
-        solve(a == L, self.w[0])#, solver_parameters=solver_parameters)
+        solve(a == L, self.w[0])
 
         # copy to w[1]
         self.w[1] = project(self.w[0], self.W)
 
-        # smooth maximum function
-        def smooth_max(val, min):
-            return 0.5*(((val - min - self.eps)**2.0)**0.5 + min + val)
-
-        # smooth absolute function (avoids zero)
+        # smooth functions (also never hit zero)
+        def smooth_pos(val):
+            return (val + smooth_abs(val))/2.0
+        def smooth_neg(val):
+            return (val - smooth_abs(val))/2.0
         def smooth_abs(val):
-            return ((val + self.eps)**2.0)**0.5
+            return (val**2.0 + self.eps)**0.5
 
         # define 1/dt
         self.k = Constant(self.timestep)
@@ -225,69 +224,72 @@ class Model():
         q[1], h[1], phi[1], c_d[1], x_N[1], u_N[1] = split(self.w[1])
 
         q_td = time_discretise(q)
-        # h_td = smooth_max(time_discretise(h), 1e-5)
+        # h_td = smooth_pos(time_discretise(h))
         h_td = time_discretise(h)
+        h_td_p = smooth_pos(time_discretise(h))
         phi_td = time_discretise(phi)
         c_d_td = time_discretise(c_d)
         x_N_td = time_discretise(x_N)
         inv_x_N = 1./x_N_td
         u_N_td = time_discretise(u_N)
-        u_N_td_c = Constant(-1.0)*u_N_td
+        ux = Constant(-1.0)*u_N_td*self.X
 
-        un_up = (self.X*u_N_td_c*self.n + smooth_abs(self.X*u_N_td_c*self.n))/2.0
-        un_down = (self.X*u_N_td_c*self.n - smooth_abs(self.X*u_N_td_c*self.n))/2.0
+        uxn_up = smooth_pos(ux*self.n)
+        uxn_down = smooth_neg(ux*self.n)
+
+        def transForm(u, v, index, disc, stab, weak_b):
+            F = self.k*grad(v)*ux*u*dx - \
+                self.k*v*grad(ux)*u*dx 
+            if disc == "CG":
+                F += self.k*v*self.n*ux*u*weak_b
+                if stab > 0.0:
+                    tau = Constant(stab)*self.dX/smooth_pos(ux)
+                    F += tau*inner(ux, grad(v))*inner(ux, grad(u))*self.k*dx - \
+                        tau*inner(ux, self.n*v)*inner(ux, grad(u))*self.k*weak_b
+            elif disc == "DG":
+                F += avg(self.k)*jump(v)*(uxn_up('+')*u('+') - uxn_up('-')*u('-'))*dS 
+                if self.mms:
+                    F += self.k*v*uxn_down*self.w_ic[index]*(self.ds(0) + self.ds(1))
+                else:
+                    F += self.k*v*uxn_down*u*weak_b
+            else:
+                sys.exit("unknown element type for function index {}".format(index))
+
+            return F
 
         # momentum
         q_N = u_N_td*h_td
-        F_q = self.q_tf*(q[0] - q[1])*dx + \
-            inv_x_N*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*self.k*dx + \
-            inv_x_N*u_N_td*grad(self.q_tf*self.X)*q_td*self.k*dx - \
-            inv_x_N*u_N_td*self.q_tf*self.X*q_N*self.n*self.k*self.ds(1) 
+        F_q = x_N_td*self.q_tf*(q[0] - q[1])*dx + \
+            self.k*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*dx + \
+            self.k*u_N_td*grad(self.q_tf*self.X)*q_td*dx - \
+            self.k*u_N_td*self.q_tf*self.X*q_N*self.n*self.ds(1) 
         if self.q_bs:
             u = q_td/h_td
             alpha = self.q_b*self.dX*(smooth_abs(u)+u+(phi_td*h_td)**0.5)*h_td
-            F_q += inv_x_N*grad(self.q_tf)*alpha*grad(u)*self.k*dx - \
-                inv_x_N*self.q_tf*alpha*grad(u)*self.n*self.k*self.ds(1) 
+            F_q += self.k*grad(self.q_tf)*alpha*grad(u)*dx - \
+                self.k*self.q_tf*alpha*grad(u)*self.n*self.ds(1)  
         if self.mms:
-            F_q += self.q_tf*self.s_q*self.k*dx
+            F_q += x_N_td*self.q_tf*self.s_q*self.k*dx
 
         # conservation
         F_h = x_N_td*self.h_tf*(h[0] - h[1])*dx + \
-            self.k*self.h_tf*grad(q_td)*dx - \
-            self.k*u_N_td_c*grad(self.h_tf)*self.X*h_td*dx - \
-            self.k*u_N_td_c*self.h_tf*grad(self.X)*h_td*dx 
-        if self.h_disc == "CG":
-            F_h += self.k*u_N_td_c*self.h_tf*self.n*self.X*h_td*(self.ds(0) + self.ds(1))
-        elif self.h_disc == "DG":
-            F_h += avg(self.k)*jump(self.h_tf)*(un_up('+')*h_td('+') - un_up('-')*h_td('-'))*dS 
-            if self.mms:
-                F_h += self.k*self.h_tf*un_down*self.w_ic[1]*(self.ds(0) + self.ds(1))
-            else:
-                F_h += self.k*self.h_tf*un_down*h_td*(self.ds(0) + self.ds(1))
-        else:
-            sys.exit("unknown element type for h")
+            self.k*self.h_tf*grad(q_td)*dx
+        F_h += transForm(h_td, self.h_tf, 1, self.h_disc, self.h_b, self.ds(0) + self.ds(1))
         if self.mms:
-            F_h = F_h + self.h_tf*x_N_td*self.s_h*self.k*dx
+            F_h += x_N_td*self.h_tf*self.s_h*self.k*dx
 
         # concentration
-        F_phi = self.phi_tf*(phi[0] - phi[1])*dx + \
-            inv_x_N*self.phi_tf*grad(q_td*phi_td/h_td)*self.k*dx - \
-            inv_x_N*self.phi_tf*self.X*u_N_td*grad(phi_td)*self.k*dx + \
-            self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx 
+        F_phi = x_N_td*self.phi_tf*(phi[0] - phi[1])*dx + \
+            self.phi_tf*grad(q_td*phi_td/h_td)*self.k*dx + \
+            x_N_td*self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx - \
+            self.phi_tf*self.X*u_N_td*grad(phi_td)*self.k*dx
         if self.mms:
-            F_phi = F_phi + self.phi_tf*self.s_phi*self.k*dx
+            F_phi += x_N_td*self.phi_tf*self.s_phi*self.k*dx
 
         # deposit
         F_c_d = x_N_td*self.c_d_tf*(c_d[0] - c_d[1])*dx - \
-            self.k*u_N_td_c*grad(self.c_d_tf)*self.X*c_d_td*dx - \
-            self.k*u_N_td_c*self.c_d_tf*grad(self.X)*c_d_td*dx - \
-            x_N_td*self.c_d_tf*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx
-        if self.c_d_disc == "CG":
-            F_c_d += self.k*u_N_td_c*self.c_d_tf*self.n*self.X*c_d_td*self.ds(0)
-        elif self.c_d_disc == "DG":
-            F_c_d += avg(self.k)*jump(self.c_d_tf)*(un_up('+')*c_d_td('+') - un_up('-')*c_d_td('-'))*dS 
-            if self.mms:
-                F_c_d += self.k*self.c_d_tf*un_down*self.w_ic[3]*(self.ds(0) + self.ds(1))
+            x_N_td*self.c_d_tf*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx 
+        F_c_d += transForm(c_d_td, self.c_d_tf, 3, self.c_d_disc, self.c_d_b, self.ds(0))
         if self.mms:
             F_c_d = F_c_d + x_N_td*self.c_d_tf*self.s_c_d*self.k*dx
 
@@ -302,7 +304,7 @@ class Model():
         # combine PDE's
         self.F = F_q + F_h + F_phi + F_c_d + F_x_N + F_u_N
 
-        # Compute directional derivative about u in the direction of du (Jacobian)
+        # compute directional derivative about u in the direction of du (Jacobian)
         self.J = derivative(self.F, self.w[0], trial)
 
     def solve(self, T = None, tol = None, nl_tol = 1e-5):
@@ -347,10 +349,11 @@ class Model():
                 self.plotter.update_plot(self)
             sw_io.print_timestep_info(self, delta)
 
-            # # if self.t==0.0:
             # q, h, phi, c_d, x_N, u_N = sw_io.map_to_arrays(self)
             # import IPython
             # IPython.embed()
+
+        list_timings(True)
 
 if __name__ == '__main__':
 
@@ -383,7 +386,7 @@ if __name__ == '__main__':
         model.solve(T = options.T)
 
         # get model data
-        c_d_aim = sw_io.create_function_from_file('deposit_data.json', model.phi_FS)
+        c_d_aim = sw_io.create_function_from_file('deposit_data.json', model.c_d_FS)
         x_N_aim = sw_io.create_function_from_file('runout_data.json', model.var_N_FS)
         (q, h, phi, c_d, x_N, u_N) = split(model.w[0])
 
@@ -409,6 +412,8 @@ if __name__ == '__main__':
         ## functional
         J = Functional((int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
 
+        tic()
+
         ## compute gradient information
         dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic))
 
@@ -425,11 +430,6 @@ if __name__ == '__main__':
         sw_io.clear_file('phi_ic_adj.json')
         j_log = []
 
-        def eval_cb(j, m):
-            print "* * * Completed forward model"
-            j_log.append(j)
-            sw_io.write_array_to_file('j_log.json', j_log, 'w')
-
         ##############################
         #### REDUCED FUNCTIONAL HACK
         ##############################
@@ -438,21 +438,38 @@ if __name__ == '__main__':
 
             def __call__(self, value):
 
+                print "\n* * * Adjoint and optimiser time taken = {}".format(toc())
+                list_timings(True)
+
                 #### initial condition dump hack ####
                 ic = value[0].vector().array()
                 sw_io.write_array_to_file('phi_ic_adj_latest.json',ic,'w')
                 sw_io.write_array_to_file('phi_ic_adj.json',ic,'a')
 
+                tic()
+
                 print "\n* * * Computing forward model"
 
-                return (super(MyReducedFunctional, self)).__call__(value)
+                func_value = (super(MyReducedFunctional, self)).__call__(value)
+
+                print "* * * Completed forward model"
+                print "* * * Time Taken = {}".format(toc())
+                
+                list_timings(True)
+
+                j = self.scale * func_value
+                j_log.append(j)
+                sw_io.write_array_to_file('j_log.json', j_log, 'w')
+
+                tic()
+
+                return func_value                
 
         #######################################
         #### END OF REDUCED FUNCTIONAL HACK
         #######################################
 
         reduced_functional = MyReducedFunctional(J, InitialConditionParameter(phi_ic),
-                                                 eval_cb = eval_cb,
                                                  scale = 1e-0)
         
         for i in range(15):

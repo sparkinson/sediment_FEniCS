@@ -7,21 +7,15 @@ import json
 class Plotter():
     
     def __init__(self, model):
-
-        if model.mms:
-            x_max = np.pi
-            h_y_lim = 20.0
-            u_y_lim = 1.5
-            phi_y_lim = 0.2
-            c_d_y_lim = 5.0
-        else:
-            x_max = 1.0
-            h_y_lim = 0.5
-            u_y_lim = 0.5
-            phi_y_lim = 0.01
-            c_d_y_lim = 1.0e-5
         
-        self.x = np.linspace(0.0, x_max, 10001)
+        q, h, phi, c_d, x_N, u_N = map_to_arrays(model)
+
+        h_y_lim = h.max()*1.1
+        u_y_lim = (q/h).max()*1.1
+        phi_y_lim = (phi/(model.rho_R_*model.g_*h)).max()*1.10
+        c_d_y_lim = 1.0e-7
+        
+        self.x = np.linspace(0.0, x_N[0], 10001)
         self.fig = plt.figure(figsize=(16, 12), dpi=50)
         self.vel_plot = self.fig.add_subplot(411)
         self.h_plot = self.fig.add_subplot(412)
@@ -39,12 +33,10 @@ class Plotter():
         self.c_d_plot.set_autoscaley_on(False)
         self.c_d_plot.set_ylim([0.0,c_d_y_lim])
         
-        q, h, phi, c_d, x_N, u_N = map_to_arrays(model)
-        
-        self.vel_line, = self.vel_plot.plot(self.x, self.y_data(model, q/h), 'r-')
-        self.h_line, = self.h_plot.plot(self.x, self.y_data(model, h), 'r-')
-        self.c_line, = self.c_plot.plot(self.x, self.y_data(model, phi/(model.rho_R_*model.g_*h)), 'r-')
-        self.c_d_line, = self.c_d_plot.plot(self.x, self.y_data(model, c_d), 'r-')
+        self.vel_line, = self.vel_plot.plot(self.x, self.y_data(model, q/h, x_N[0]), 'r-')
+        self.h_line, = self.h_plot.plot(self.x, self.y_data(model, h, x_N[0]), 'r-')
+        self.c_line, = self.c_plot.plot(self.x, self.y_data(model, phi/(model.rho_R_*model.g_*h), x_N[0]), 'r-')
+        self.c_d_line, = self.c_d_plot.plot(self.x, self.y_data(model, c_d, x_N[0]), 'r-')
 
         self.fig.canvas.draw()
         self.fig.savefig('results/%06.2f.png' % (0.0))  
@@ -53,19 +45,25 @@ class Plotter():
         
         q, h, phi, c_d, x_N, u_N = map_to_arrays(model)
         
-        self.vel_line.set_ydata(self.y_data(model, q/h))
-        self.h_line.set_ydata(self.y_data(model, h))
-        self.c_line.set_ydata(self.y_data(model, phi/(model.rho_R_*model.g_*h)))
-        self.c_d_line.set_ydata(self.y_data(model, c_d))
+        self.vel_line.set_ydata(self.y_data(model, q/h, x_N[0]))
+        self.h_line.set_ydata(self.y_data(model, h, x_N[0]))
+        self.c_line.set_ydata(self.y_data(model, phi/(model.rho_R_*model.g_*h), x_N[0]))
+        self.c_d_line.set_ydata(self.y_data(model, c_d, x_N[0]))
+
+        c_d_y_lim = c_d.max()*1.10
+        x_lim = x_N[0]
+        self.c_d_plot.set_ylim([0.0,c_d_y_lim])
+        self.vel_plot.set_xlim([0.0,x_lim])
+        self.h_plot.set_xlim([0.0,x_lim])
+        self.c_plot.set_xlim([0.0,x_lim])
+        self.c_d_plot.set_xlim([0.0,x_lim])
 
         self.fig.canvas.draw()
         self.fig.savefig('results/{:06.2f}.png'.format(model.t))  
 
-    def y_data(self, model, u):
+    def y_data(self, model, u, x_n):
 
-        x_N = model.w[0].vector().array()[model.W.sub(5).dofmap().cell_dofs(0)]
-
-        val_x = np.linspace(0.0, x_N, model.L/model.dX_ + 1)
+        val_x = np.linspace(0.0, x_n, model.L/model.dX_ + 1)
 
         if len(u) > len(val_x):
             v = val_x
@@ -83,14 +81,9 @@ def print_timestep_info(model, delta):
         
     mass = (h[:model.L/model.dX_ + 1]*(x_N[0]*model.dX_)).sum()
 
-    info_green("t = %.2e, timestep = %.2e, x_N = %.2e, u_N = %.2e, u_N_2 = %.2e, h_N = %.2e, mass = %.2e, dw = %.2e" % 
-               (model.t, model.timestep, 
-                x_N[0], 
-                u_N[0], 
-                q[-1]/h[-1], 
-                h[-1],
-                mass,
-                delta))
+    info_green("\nEND OF TIMESTEP t = {0:.2e}, dt = {1:.2e}:\n".format(model.t, model.timestep) +
+               "x_N = {0:.2e}, u_N = {1:.2e}, u_N_2 = {2:.2e}, h_N = {3:.2e}, mass = {4:.2e}, dw = {5:.2e}\n"
+               .format(x_N[0], u_N[0], q[-1]/h[-1], h[-1], mass, delta))
 
 def map_to_arrays(model):
     
