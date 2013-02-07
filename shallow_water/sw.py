@@ -103,7 +103,6 @@ class Model():
         # get dof_maps for plots
         self.map_dict = dict()
         for i in range(6):
-            print len(self.W.sub(i).dofmap().dofs()), len(self.mesh.cells()) + 1, len(self.mesh.cells()) * 2
             if len(self.W.sub(i).dofmap().dofs()) == len(self.mesh.cells()) + 1:   # CG 
                 self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j)[0] for j in range(len(self.mesh.cells()))]
                 self.map_dict[i].append(self.W.sub(i).dofmap().cell_dofs(len(self.mesh.cells()) - 1)[1])
@@ -226,7 +225,8 @@ class Model():
         q[1], h[1], phi[1], c_d[1], x_N[1], u_N[1] = split(self.w[1])
 
         q_td = time_discretise(q)
-        h_td = smooth_max(time_discretise(h), 1e-5)
+        # h_td = smooth_max(time_discretise(h), 1e-5)
+        h_td = time_discretise(h)
         phi_td = time_discretise(phi)
         c_d_td = time_discretise(c_d)
         x_N_td = time_discretise(x_N)
