@@ -34,43 +34,47 @@ class Model():
     # SIMULAITON USER DEFINED PARAMETERS
 
     # mesh
-    dX_ = 5.0e-2
-    L = 1.0
+    dX_ = 2.5e-2
+    L_ = 1.0
 
     # current properties
     c_0 = 0.00349
     rho_R_ = 1.717
     h_0 = 0.4
-    x_N_ = 0.2
+    x_N_ = 0.8
     Fr_ = 1.19
     g_ = 9.81
     u_sink_ = 1e-3
 
-    # time step
-    timestep = 5e-3
+    # time stepping
+    t = 0.0
+    timestep = 1e-2
+    adapt_timestep = True
+    cfl = Constant(0.5)
 
     # mms test (default False)
     mms = False
 
     # display plot
-    plot = True
+    plot = None
 
     # smoothing eps value
-    eps = 1e-18
+    eps = 1e-12
 
     # define stabilisation parameters
-    q_su = False
-    q_bs = True
-    q_b = 0.1
-    h_b = 0.0
-    phi_b = 0.0
-    c_d_b = 0.0
+    q_b = 0.3
+    h_b = 0.2
+    phi_b = 0.2
+    c_d_b = 0.1
 
     def initialise_function_spaces(self):
 
         # define geometry
-        self.mesh = IntervalMesh(int(self.L/self.dX_), 0.0, self.L)
+        self.mesh = IntervalMesh(int(self.L_/self.dX_), 0.0, self.L_)
         self.n = FacetNormal(self.mesh)
+
+        self.dX = Constant(self.dX_)
+        self.L = Constant(self.L_)
 
         # left boundary marked as 0, right as 1
         class LeftBoundary(SubDomain):
@@ -83,15 +87,13 @@ class Model():
         self.ds = Measure("ds")[exterior_facet_domains] 
 
         # define function spaces
-        self.q_degree = 1
-        self.q_disc = "CG"
-        self.q_FS = FunctionSpace(self.mesh, self.q_disc, self.q_degree)
+        self.q_degree = 2
+        self.q_FS = FunctionSpace(self.mesh, "CG", self.q_degree)
         self.h_degree = 1
         self.h_disc = "CG"
         self.h_FS = FunctionSpace(self.mesh, self.h_disc, self.h_degree)
         self.phi_degree = 1
-        self.phi_disc = "CG"
-        self.phi_FS = FunctionSpace(self.mesh, self.phi_disc, self.phi_degree)
+        self.phi_FS = FunctionSpace(self.mesh, "CG", self.phi_degree)
         self.c_d_degree = 1
         self.c_d_disc = "CG"
         self.c_d_FS = FunctionSpace(self.mesh, self.c_d_disc, self.c_d_degree)
@@ -102,10 +104,14 @@ class Model():
         # get dof_maps for plots
         self.map_dict = dict()
         for i in range(6):
-            if len(self.W.sub(i).dofmap().dofs()) == len(self.mesh.cells()) + 1:   # CG 
+            if len(self.W.sub(i).dofmap().dofs()) == len(self.mesh.cells()) + 1:   # P1CG 
                 self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j)[0] for j in range(len(self.mesh.cells()))]
-                self.map_dict[i].append(self.W.sub(i).dofmap().cell_dofs(len(self.mesh.cells()) - 1)[1])
-            elif len(self.W.sub(i).dofmap().dofs()) == len(self.mesh.cells()) * 2:   # DG
+                self.map_dict[i].append(self.W.sub(i).dofmap().cell_dofs(len(self.mesh.cells()) - 1)[-1])
+            elif len(self.W.sub(i).dofmap().dofs()) == len(self.mesh.cells()) * 2 + 1:   # P2CG 
+                self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j)[:-1] for j in range(len(self.mesh.cells()))]
+                self.map_dict[i] = list(np.array(self.map_dict[i]).flatten())
+                self.map_dict[i].append(self.W.sub(i).dofmap().cell_dofs(len(self.mesh.cells()) - 1)[-1])    
+            elif len(self.W.sub(i).dofmap().dofs()) == len(self.mesh.cells()) * 2:   # P1DG
                 self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j) for j in range(len(self.mesh.cells()))]
                 self.map_dict[i] = list(np.array(self.map_dict[i]).flatten())
             else:   # R
@@ -121,10 +127,17 @@ class Model():
         self.w = dict()
         self.w[0] = Function(self.W, name='U')
 
-    def setup(self, h_ic = None, phi_ic = None, q_ic = None, w_ic = None):
+    def setup(self, h_ic = None, phi_ic = None, 
+              q_a = Constant(0.0), q_pa = Constant(0.0), q_pb = Constant(1.0), 
+              w_ic = None):
+        # q_a between 0.0 and 1.0 
+        # q_pa between 0.2 and 0.99 
+        # q_pb between 1.0 and 
+
+        # set current time to 0.0
+        self.t = 0.0
 
         # define constants
-        self.dX = Constant(self.dX_, name="dX")
         self.g = Constant(self.g_, name="g")
         self.rho_R = Constant(self.rho_R_, name="rho_R")
         self.Fr = Constant(self.Fr_, name="Fr")
@@ -146,24 +159,25 @@ class Model():
             # set u_N component
             trial = TrialFunction(self.var_N_FS)
             test = TestFunction(self.var_N_FS)
-            u_N_ic = Function(self.var_N_FS)
+            u_N_ic = Function(self.var_N_FS, name='u_N_ic')
             a = inner(test, trial)*self.ds(1)
             L = inner(test, self.Fr*phi_ic**0.5)*self.ds(1)             
             solve(a == L, u_N_ic)
 
-            if type(q_ic) == type(None):
-                trial = TrialFunction(self.q_FS)
-                test = TestFunction(self.q_FS)
-                q_ic = Function(self.q_FS)
-                a = inner(test, trial)*dx
-                L = inner(test, (1.0 - cos(self.X*np.pi))/2.0*u_N_ic*h_ic)*dx             
-                solve(a == L, q_ic)
+            trial = TrialFunction(self.q_FS)
+            test = TestFunction(self.q_FS)
+            q_ic = Function(self.q_FS, name='q_ic')
+            a = inner(test, trial)*dx
+            q_b = Constant(1.0) - q_a  
+            f = (1.0 - (q_a*cos(self.X**q_pa*np.pi) + q_b*cos(self.X**q_pb*np.pi)))/2.0
+            L = inner(test, f*u_N_ic*h_ic)*dx             
+            solve(a == L, q_ic)
 
             self.w_ic = [
                 q_ic, 
                 h_ic, 
                 phi_ic, 
-                Function(self.c_d_FS), 
+                Function(self.c_d_FS, name='c_d_ic'), 
                 Constant(self.x_N_), 
                 u_N_ic
                 ]
@@ -181,14 +195,13 @@ class Model():
         # initialise plotting
         if self.plot:
             self.plotter = sw_io.Plotter(self)
+            self.plot_t = self.plot
 
     def generate_form(self):
 
         # galerkin projection of initial conditions on to w
         test = TestFunction(self.W)
         trial = TrialFunction(self.W)
-        
-        # set q, h, phi, c_d and x_N components
         L = 0; a = 0
         for i in range(len(self.w_ic)):
             a += inner(test[i], trial[i])*dx
@@ -206,9 +219,6 @@ class Model():
         def smooth_abs(val):
             return (val**2.0 + self.eps)**0.5
 
-        # define 1/dt
-        self.k = Constant(self.timestep)
-
         # time discretisation of values
         def time_discretise(u):
             return 0.5*u[0] + 0.5*u[1]
@@ -222,6 +232,16 @@ class Model():
 
         q[0], h[0], phi[0], c_d[0], x_N[0], u_N[0] = split(self.w[0])
         q[1], h[1], phi[1], c_d[1], x_N[1], u_N[1] = split(self.w[1])
+
+        # define adaptive timestep form
+        if self.adapt_timestep:
+            self.k = Function(self.var_N_FS, name="k")
+            self.k_tf = TestFunction(self.var_N_FS)
+            self.k_trf = TrialFunction(self.var_N_FS)
+            self.a_k = self.k_tf*self.k_trf*dx 
+            self.L_k = self.k_tf*(x_N[0]*self.dX)/(self.L*u_N[0])*self.cfl*dx
+        else:
+            self.k = Constant(self.timestep)
 
         q_td = time_discretise(q)
         # h_td = smooth_pos(time_discretise(h))
@@ -237,37 +257,38 @@ class Model():
         uxn_up = smooth_pos(ux*self.n)
         uxn_down = smooth_neg(ux*self.n)
 
-        def transForm(u, v, index, disc, stab, weak_b):
-            F = self.k*grad(v)*ux*u*dx - \
-                self.k*v*grad(ux)*u*dx 
+        def transForm(u, v, index, disc, stab, weak_b, b_val = None):
+            if type(b_val) == type(None):
+                b_val = u
+
+            F = - self.k*grad(v)*ux*u*dx - self.k*v*grad(ux)*u*dx 
+            
             if disc == "CG":
-                F += self.k*v*self.n*ux*u*weak_b
+                F += self.k*v*self.n*ux*b_val*weak_b
                 if stab > 0.0:
-                    tau = Constant(stab)*self.dX/smooth_pos(ux)
+                    tau = Constant(stab)*self.dX/smooth_abs(ux)
                     F += tau*inner(ux, grad(v))*inner(ux, grad(u))*self.k*dx - \
-                        tau*inner(ux, self.n*v)*inner(ux, grad(u))*self.k*weak_b
+                        tau*inner(ux, self.n*v)*inner(ux, grad(b_val))*self.k*weak_b
             elif disc == "DG":
                 F += avg(self.k)*jump(v)*(uxn_up('+')*u('+') - uxn_up('-')*u('-'))*dS 
                 if self.mms:
                     F += self.k*v*uxn_down*self.w_ic[index]*(self.ds(0) + self.ds(1))
                 else:
-                    F += self.k*v*uxn_down*u*weak_b
+                    F += self.k*v*uxn_down*b_val*weak_b
             else:
                 sys.exit("unknown element type for function index {}".format(index))
 
             return F
 
         # momentum
-        q_N = u_N_td*h_td
         F_q = x_N_td*self.q_tf*(q[0] - q[1])*dx + \
-            self.k*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*dx + \
-            self.k*u_N_td*grad(self.q_tf*self.X)*q_td*dx - \
-            self.k*u_N_td*self.q_tf*self.X*q_N*self.n*self.ds(1) 
-        if self.q_bs:
-            u = q_td/h_td
-            alpha = self.q_b*self.dX*(smooth_abs(u)+u+(phi_td*h_td)**0.5)*h_td
-            F_q += self.k*grad(self.q_tf)*alpha*grad(u)*dx - \
-                self.k*self.q_tf*alpha*grad(u)*self.n*self.ds(1)  
+            self.k*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*dx
+        F_q += transForm(q_td, self.q_tf, 0, "CG", 0.0, self.ds(1), u_N_td*h_td)
+        # stabilisation
+        u = q_td/h_td
+        alpha = self.q_b*self.dX*(smooth_abs(u)+u+(phi_td*h_td)**0.5)*h_td
+        F_q += self.k*grad(self.q_tf)*alpha*grad(u)*dx - \
+            self.k*self.q_tf*alpha*grad(u)*self.n*self.ds(1)  
         if self.mms:
             F_q += x_N_td*self.q_tf*self.s_q*self.k*dx
 
@@ -281,8 +302,8 @@ class Model():
         # concentration
         F_phi = x_N_td*self.phi_tf*(phi[0] - phi[1])*dx + \
             self.phi_tf*grad(q_td*phi_td/h_td)*self.k*dx + \
-            x_N_td*self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx - \
-            self.phi_tf*self.X*u_N_td*grad(phi_td)*self.k*dx
+            x_N_td*self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx
+        F_phi += transForm(phi_td, self.phi_tf, 2, "CG", self.phi_b, self.ds(0) + self.ds(1))
         if self.mms:
             F_phi += x_N_td*self.phi_tf*self.s_phi*self.k*dx
 
@@ -295,7 +316,7 @@ class Model():
 
         # nose location/speed
         if self.mms:
-            F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*Constant(0.0)*self.k*dx
+            F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx 
         else:
             F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*u_N_td*self.k*dx 
         F_u_N = self.u_N_tf*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
@@ -321,38 +342,44 @@ class Model():
                     return True
             return False
 
-        self.t = 0.0
-        delta = 1e10
+        tic()
 
+        delta = 1e10
         while not (time_finish(self.t) or converged(delta)):
             
+            # ADAPTIVE TIMESTEP
+            if self.adapt_timestep:
+                solve(self.a_k == self.L_k, self.k)
+                self.timestep = self.k.vector().array()[0]
+            
             # SOLVE COUPLED EQUATIONS
+            # solve(self.F == 0, self.w[0], bcs=self.bc, solver_parameters=solver_parameters)
             solve(self.F == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
             
-            delta = 0.0
-            f_list = [[self.w[0].split()[i], self.w[1].split()[i]] for i in range(len(self.w[0].split()))]
-            for f_0, f_1 in f_list:
-                delta = max(errornorm(f_0, f_1, norm_type="L2", degree_rise=1)/self.timestep, delta)
+            if tol:
+                delta = 0.0
+                f_list = [[self.w[0].split()[i], self.w[1].split()[i]] for i in range(len(self.w[0].split()))]
+                for f_0, f_1 in f_list:
+                    delta = max(errornorm(f_0, f_1, norm_type="L2", degree_rise=1)/self.timestep, delta)
 
             self.w[1].assign(self.w[0])
 
             self.t += self.timestep
-            
-            # ADAPTIVE TIMESTEP
-            # timestep = ...
-            # self.k.assign(self.timestep)
 
             # plot(self.w[0][1], interactive = False, rescale = True)
 
             # display results
             if self.plot:
-                self.plotter.update_plot(self)
+                if self.t > self.plot_t:
+                    self.plotter.update_plot(self)
+                    self.plot_t += self.plot
             sw_io.print_timestep_info(self, delta)
 
             # q, h, phi, c_d, x_N, u_N = sw_io.map_to_arrays(self)
             # import IPython
             # IPython.embed()
 
+        print "\n* * * Initial forward run finished: time taken = {}".format(toc())
         list_timings(True)
 
 if __name__ == '__main__':
@@ -370,8 +397,8 @@ if __name__ == '__main__':
                       dest='T', type=float, default=0.2,
                       help='simulation end time')
     parser.add_option('-p', '--plot',
-                      action='store_true', dest='plot', default=False,
-                      help='plot results in real-time')
+                      dest='plot', type=float, default=None,
+                      help='plot results in real-time - provide time between plots')
     (options, args) = parser.parse_args()
     
     model = Model()
@@ -382,84 +409,116 @@ if __name__ == '__main__':
     if options.adjoint == True:
 
         phi_ic = project(Expression('0.01'), model.phi_FS)
-        model.setup(phi_ic = phi_ic)
-        model.solve(T = options.T)
+        h_ic = project(Expression('0.4'), model.h_FS)
 
-        # get model data
-        c_d_aim = sw_io.create_function_from_file('deposit_data.json', model.c_d_FS)
-        x_N_aim = sw_io.create_function_from_file('runout_data.json', model.var_N_FS)
+        q_a = Constant(0.5)
+        q_pa = Constant(0.1)
+        q_pb = Constant(1.0)
+
+        model.setup(h_ic = h_ic, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
+        model.solve(T = options.T)
         (q, h, phi, c_d, x_N, u_N) = split(model.w[0])
 
-        # form Functional integrals
-        int_0_scale = Constant(1)
-        int_1_scale = Constant(1)
-        int_0 = inner(c_d-c_d_aim, c_d-c_d_aim)*int_0_scale*dx
-        int_1 = inner(x_N-x_N_aim, x_N-x_N_aim)*int_1_scale*dx
+        # # get model data
+        # c_d_aim = sw_io.create_function_from_file('deposit_data.json', model.c_d_FS)
+        # x_N_aim = sw_io.create_function_from_file('runout_data.json', model.var_N_FS)
 
-        # determine scalaing
-        int_0_scale.assign(1e-2/assemble(int_0))
-        int_1_scale.assign(1e-4/assemble(int_1))
-        print assemble(int_0)
-        print assemble(int_1)
-        ### int_0 1e-2, int_1 1e-4 - worked well
+        # # form Functional integrals
+        # int_0_scale = Constant(1)
+        # int_1_scale = Constant(1)
+        # int_0 = inner(c_d-c_d_aim, c_d-c_d_aim)*int_0_scale*dx
+        # int_1 = inner(x_N-x_N_aim, x_N-x_N_aim)*int_1_scale*dx
+
+        # # determine scalaing
+        # int_0_scale.assign(1e-2/assemble(int_0))
+        # int_1_scale.assign(1e-4/assemble(int_1))
+        # # print assemble(int_0)
+        # # print assemble(int_1)
+        # ### int_0 1e-2, int_1 1e-4 - worked well
         
-        ## functional regularisation
-        reg_scale = Constant(1)
-        int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
-        reg_scale_base = 1e-3
-        reg_scale.assign(reg_scale_base)
+        # ## functional regularisation
+        # reg_scale = Constant(1)
+        # int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
+        # reg_scale_base = 1e-3
+        # reg_scale.assign(reg_scale_base)
 
-        ## functional
-        J = Functional((int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
+        # ## functional
+        # J = Functional((int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
+
+        int_scale = Constant(1)
+        x_N_ = Constant(sw_io.map_to_arrays(model)[4][0])
+        inv_x_N_ = Constant(1.0/sw_io.map_to_arrays(model)[4][0])
+        filter_val = 1.0-exp(10.0*inv_x_N_*(model.X-model.L/x_N_))
+        filter = (filter_val + (filter_val**2.0 + 1e-4)**0.5)/2.0
+
+        int = (1.0 - filter)*grad(c_d)*int_scale*dx
+        int_scale.assign(1e-1/assemble(int))
+
+        reg_scale = Constant(-1.0)
+        int_reg = inner(grad(phi),grad(phi))*reg_scale*dx
+        
+        J = Functional(int*dt[FINISH_TIME] + int_reg*dt[START_TIME])
 
         tic()
 
-        ## compute gradient information
         dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic))
 
-        # import matplotlib.pyplot as plt
-        # fig = plt.figure()
-        # ax = fig.add_subplot(111)
-        # ax.plot(dJdphi.vector().array())
-        # plt.show()
-
-        # import IPython
-        # IPython.embed()
+        # print '* * * backward model took:', toc()
+        # list_timings(True)
+        # sys.exit()
 
         # clear old data
         sw_io.clear_file('phi_ic_adj.json')
+        sw_io.clear_file('h_ic_adj.json')
         j_log = []
 
         ##############################
         #### REDUCED FUNCTIONAL HACK
         ##############################
+        from dolfin_adjoint.adjglobals import adjointer
 
         class MyReducedFunctional(ReducedFunctional):
 
             def __call__(self, value):
 
-                print "\n* * * Adjoint and optimiser time taken = {}".format(toc())
-                list_timings(True)
+                try:
+                    print "\n* * * Adjoint and optimiser time taken = {}".format(toc())
+                    list_timings(True)
+                except:
+                    pass
 
                 #### initial condition dump hack ####
-                ic = value[0].vector().array()
-                sw_io.write_array_to_file('phi_ic_adj_latest.json',ic,'w')
-                sw_io.write_array_to_file('phi_ic_adj.json',ic,'a')
+                phi_ic = value[0].vector().array()
+                h_ic = value[1].vector().array()
+                q_a_ = value[2]((0,0)); q_pa_ = value[3]((0,0)); q_pb_ = value[4]((0,0))
+                sw_io.write_array_to_file('phi_ic_adj_latest.json',phi_ic,'w')
+                sw_io.write_array_to_file('phi_ic_adj.json',phi_ic,'a')
+                sw_io.write_array_to_file('h_ic_adj_latest.json',h_ic,'w')
+                sw_io.write_array_to_file('h_ic_adj.json',h_ic,'a')
+                sw_io.write_q_vals_to_file('q_ic_adj_latest.json',q_a_,q_pa_,q_pb_,'w')
+                sw_io.write_q_vals_to_file('q_ic_adj.json',q_a_,q_pa_,q_pb_,'a')
 
                 tic()
 
                 print "\n* * * Computing forward model"
 
                 func_value = (super(MyReducedFunctional, self)).__call__(value)
+                # model.setup(h_ic = value[1], phi_ic = value[0], q_a = value[2], q_pa = value[3], q_pb = value[4])
+                # model.solve(T = options.T)
 
-                print "* * * Completed forward model"
-                print "* * * Time Taken = {}".format(toc())
+                # func_value = adjointer.evaluate_functional(self.functional, 0)
+
+                print "* * * Forward model: time taken = {}".format(toc())
                 
                 list_timings(True)
+
+                sys.exit()
 
                 j = self.scale * func_value
                 j_log.append(j)
                 sw_io.write_array_to_file('j_log.json', j_log, 'w')
+                
+                print "* * * J = {}".format(j)
 
                 tic()
 
@@ -469,33 +528,53 @@ if __name__ == '__main__':
         #### END OF REDUCED FUNCTIONAL HACK
         #######################################
 
-        reduced_functional = MyReducedFunctional(J, InitialConditionParameter(phi_ic),
+        reduced_functional = MyReducedFunctional(J, 
+                                                 [InitialConditionParameter(phi_ic),
+                                                  InitialConditionParameter(h_ic),
+                                                  ScalarParameter(q_a), 
+                                                  ScalarParameter(q_pa), 
+                                                  ScalarParameter(q_pb)],
                                                  scale = 1e-0)
         
-        for i in range(15):
-            reg_scale.assign(reg_scale_base*2**(0-i))
+        tic()
 
-            m_opt = minimize(reduced_functional, method = "L-BFGS-B", options = {'maxiter': 4, 'disp': True, 'gtol': 1e-9, 'ftol': 1e-9}, 
-                             bounds = (1e-7, 1e-0))
+        # for i in range(15):
+        #     reg_scale.assign(reg_scale_base*2**(0-i))
 
-        print m_opt.vector().array()
+        #     m_opt = minimize(reduced_functional, method = "L-BFGS-B", options = {'maxiter': 4, 'disp': True, 'gtol': 1e-9, 'ftol': 1e-9}, 
+        #                      bounds = (1e-7, 1e-0))
+
+        m_opt = maximize(reduced_functional, 
+                         method = "L-BFGS-B", 
+                         options = {'maxiter': 1, 'disp': True, 'gtol': 1e-20}, 
+                         bounds = [[5e-2, 0.1, 0.0, 0.2, 1.0], 
+                                   [2e-1, 0.4, 1.0, 0.99, 5.0]]) 
+
+        # print m_opt.vector().array()
 
     # Adjoint 
     elif options.phi_ic_test == True:
 
-        f = open('phi_ic_adj_latest.json','r')
-        json_string = f.readline()
-        data = np.array(json.loads(json_string))
-        phi_ic = Function(model.phi_FS)
-        phi_ic.vector()[:] = data
+        h_ic = sw_io.create_function_from_file('h_ic_adj_latest.json', model.h_FS)
+        phi_ic = sw_io.create_function_from_file('phi_ic_adj_latest.json', model.phi_FS)
+        q_a, q_pa, q_pb = sw_io.read_q_vals_from_file('q_ic_adj_latest.json')
+        print q_a, q_pa, q_pb
+        q_a = Constant(q_a); q_pa = Constant(q_pa); q_pb = Constant(q_pb)
         
-        model.setup(phi_ic = phi_ic)
+        model.setup(h_ic = h_ic, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
 
         model.solve(T = options.T)    
 
-    else:        
+    else:  
 
-        phi_ic = project(Expression('0.03+0.005*sin(2*pi*x[0])'), model.phi_FS)
+        phi_ic = project(Expression('0.01'), model.phi_FS)
+        h_ic = project(Expression('0.4'), model.h_FS)
+
+        q_a = Constant(0.5)
+        q_pa = Constant(0.1)
+        q_pb = Constant(1.0)      
+
+        # phi_ic = project(Expression('0.03+0.005*sin(2*pi*x[0])'), model.phi_FS)
         model.setup(phi_ic=phi_ic)
 
         q, h, phi, c_d, x_N, u_N = sw_io.map_to_arrays(model)
