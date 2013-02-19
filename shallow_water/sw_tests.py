@@ -13,8 +13,8 @@ class MMS_Model(sw.Model):
         self.mms = True
 
         # define constants
-        self.dX = dX
-        self.L = np.pi
+        self.dX_ = dX
+        self.L_ = np.pi
         self.g_ = 1.0
         self.g = Constant(1.0)
         self.rho_R_ = 1.0

@@ -24,7 +24,11 @@ data_x = [x for set in data]
 fig = plt.figure()
 ax = fig.add_subplot(111)
 ax.plot(target, 'k--', linewidth=3)
-ax.plot(data.T)
+try:
+    ax.plot(data[:-1].T, linewidth=0.5)
+    ax.plot(data[-1].T, linewidth=1.5)
+except:
+    pass
 
 plt.show()
 
@@ -48,6 +52,10 @@ data_x = [x for set in data]
 fig = plt.figure()
 ax = fig.add_subplot(111)
 ax.plot(target, 'k--', linewidth=3)
-ax.plot(data.T)
+try:
+    ax.plot(data[:-1].T, linewidth=0.5)
+    ax.plot(data[-1].T, linewidth=1.5)
+except:
+    pass
 
 plt.show()
