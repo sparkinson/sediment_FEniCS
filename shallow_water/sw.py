@@ -48,8 +48,8 @@ class Model():
 
     # time stepping
     t = 0.0
-    timestep = 1e-2
-    adapt_timestep = True
+    timestep = 1e-1
+    adapt_timestep = False
     cfl = Constant(0.5)
 
     # mms test (default False)
@@ -63,9 +63,9 @@ class Model():
 
     # define stabilisation parameters
     q_b = 0.3
-    h_b = 0.2
-    phi_b = 0.2
-    c_d_b = 0.1
+    h_b = 0.0
+    phi_b = 0.0
+    c_d_b = 0.0
 
     def initialise_function_spaces(self):
 
@@ -164,13 +164,18 @@ class Model():
             L = inner(test, self.Fr*phi_ic**0.5)*self.ds(1)             
             solve(a == L, u_N_ic)
 
+            q_N_ic = Function(self.var_N_FS, name='q_N_ic')
+            a = inner(test, trial)*self.ds(1)
+            L = inner(test, u_N_ic*h_ic)*self.ds(1)             
+            solve(a == L, q_N_ic)
+
             trial = TrialFunction(self.q_FS)
             test = TestFunction(self.q_FS)
             q_ic = Function(self.q_FS, name='q_ic')
             a = inner(test, trial)*dx
             q_b = Constant(1.0) - q_a  
-            f = (1.0 - (q_a*cos(self.X**q_pa*np.pi) + q_b*cos(self.X**q_pb*np.pi)))/2.0
-            L = inner(test, f*u_N_ic*h_ic)*dx             
+            f = ((q_a*cos((self.X**q_pa)*np.pi) + q_b*cos((self.X**q_pb)*np.pi)))/2.0
+            L = inner(test, self.X*q_N_ic)*dx             
             solve(a == L, q_ic)
 
             self.w_ic = [
@@ -181,6 +186,12 @@ class Model():
                 Constant(self.x_N_), 
                 u_N_ic
                 ]
+
+            # for exp in self.w_ic:
+            #     try:
+            #         print exp.vector().array()
+            #     except:
+            #         print exp((0,0))
             
         else:
             self.w_ic = w_ic
@@ -293,26 +304,26 @@ class Model():
             F_q += x_N_td*self.q_tf*self.s_q*self.k*dx
 
         # conservation
-        F_h = x_N_td*self.h_tf*(h[0] - h[1])*dx + \
-            self.k*self.h_tf*grad(q_td)*dx
-        F_h += transForm(h_td, self.h_tf, 1, self.h_disc, self.h_b, self.ds(0) + self.ds(1))
-        if self.mms:
-            F_h += x_N_td*self.h_tf*self.s_h*self.k*dx
+        F_h = x_N_td*self.h_tf*(h[0] - h[1])*dx # + \
+        #     self.k*self.h_tf*grad(q_td)*dx
+        # F_h += transForm(h_td, self.h_tf, 1, self.h_disc, self.h_b, self.ds(0) + self.ds(1))
+        # if self.mms:
+        #     F_h += x_N_td*self.h_tf*self.s_h*self.k*dx
 
         # concentration
-        F_phi = x_N_td*self.phi_tf*(phi[0] - phi[1])*dx + \
-            self.phi_tf*grad(q_td*phi_td/h_td)*self.k*dx + \
-            x_N_td*self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx
-        F_phi += transForm(phi_td, self.phi_tf, 2, "CG", self.phi_b, self.ds(0) + self.ds(1))
-        if self.mms:
-            F_phi += x_N_td*self.phi_tf*self.s_phi*self.k*dx
+        F_phi = x_N_td*self.phi_tf*(phi[0] - phi[1])*dx # + \
+        #     self.phi_tf*grad(q_td*phi_td/h_td)*self.k*dx + \
+        #     x_N_td*self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx
+        # F_phi += transForm(phi_td, self.phi_tf, 2, "CG", self.phi_b, self.ds(0) + self.ds(1))
+        # if self.mms:
+        #     F_phi += x_N_td*self.phi_tf*self.s_phi*self.k*dx
 
         # deposit
-        F_c_d = x_N_td*self.c_d_tf*(c_d[0] - c_d[1])*dx - \
-            x_N_td*self.c_d_tf*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx 
-        F_c_d += transForm(c_d_td, self.c_d_tf, 3, self.c_d_disc, self.c_d_b, self.ds(0))
-        if self.mms:
-            F_c_d = F_c_d + x_N_td*self.c_d_tf*self.s_c_d*self.k*dx
+        F_c_d = x_N_td*self.c_d_tf*(c_d[0] - c_d[1])*dx # - \
+        #     x_N_td*self.c_d_tf*self.u_sink*phi_td/h_td*self.k*dx 
+        # F_c_d += transForm(c_d_td, self.c_d_tf, 3, self.c_d_disc, self.c_d_b, self.ds(0))
+        # if self.mms:
+        #     F_c_d = F_c_d + x_N_td*self.c_d_tf*self.s_c_d*self.k*dx
 
         # nose location/speed
         if self.mms:
@@ -388,84 +399,126 @@ if __name__ == '__main__':
     usage = 'usage: %prog [options]'
     parser = OptionParser(usage=usage)
     parser.add_option('-a', '--adjoint',
-                      action='store_true', dest='adjoint', default=False,
+                      dest='adjoint', type=int, default=None,
                       help='adjoint run')
     parser.add_option('-t', '--phi_ic_test',
                       action='store_true', dest='phi_ic_test', default=False,
                       help='test phi initial conditions')
+    parser.add_option('-z', '--phi_ic_test2',
+                      action='store_true', dest='phi_ic_test2', default=False,
+                      help='test phi initial conditions type 2')
     parser.add_option('-T', '--end_time',
                       dest='T', type=float, default=0.2,
                       help='simulation end time')
     parser.add_option('-p', '--plot',
                       dest='plot', type=float, default=None,
                       help='plot results in real-time - provide time between plots')
+    parser.add_option('-s', '--show_plot',
+                      dest='show_plot', action='store_true', default=False,
+                      help='show plots')
+    parser.add_option('-S', '--save_plot',
+                      dest='save_plot', action='store_true', default=False,
+                      help='save plots')
     (options, args) = parser.parse_args()
     
     model = Model()
     model.plot = options.plot
+    model.save_plot = options.save_plot
+    model.show_plot = options.show_plot
     model.initialise_function_spaces()
 
-    # Adjoint 
-    if options.adjoint == True:
+    # Adjoint test
+    if options.phi_ic_test == True:
 
-        phi_ic = project(Expression('0.01'), model.phi_FS)
-        h_ic = project(Expression('0.4'), model.h_FS)
+        if options.adjoint == 1:
+            
+            h_ic = sw_io.create_function_from_file('h_ic_adj_latest.json', model.h_FS)
+            phi_ic = sw_io.create_function_from_file('phi_ic_adj_latest.json', model.phi_FS)
+            q_a, q_pa, q_pb = sw_io.read_q_vals_from_file('q_ic_adj_latest.json')
 
-        q_a = Constant(0.5)
-        q_pa = Constant(0.1)
-        q_pb = Constant(1.0)
+        elif options.adjoint == 2:
 
+            h_ic = sw_io.create_function_from_file('h_ic_adj2_latest.json', model.h_FS)
+            phi_ic = sw_io.create_function_from_file('phi_ic_adj2_latest.json', model.phi_FS)
+            q_a, q_pa, q_pb = sw_io.read_q_vals_from_file('q_ic_adj2_latest.json')
+
+        else:
+
+            print "which adjoint test do you want?"
+            sys.exit()
+
+        q_a = Constant(q_a); q_pa = Constant(q_pa); q_pb = Constant(q_pb)
+        
         model.setup(h_ic = h_ic, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
-        model.solve(T = options.T)
-        (q, h, phi, c_d, x_N, u_N) = split(model.w[0])
 
-        # # get model data
-        # c_d_aim = sw_io.create_function_from_file('deposit_data.json', model.c_d_FS)
-        # x_N_aim = sw_io.create_function_from_file('runout_data.json', model.var_N_FS)
+        model.solve(T = options.T) 
 
-        # # form Functional integrals
-        # int_0_scale = Constant(1)
-        # int_1_scale = Constant(1)
-        # int_0 = inner(c_d-c_d_aim, c_d-c_d_aim)*int_0_scale*dx
-        # int_1 = inner(x_N-x_N_aim, x_N-x_N_aim)*int_1_scale*dx
+    # Adjoint 
+    elif options.adjoint:
 
-        # # determine scalaing
-        # int_0_scale.assign(1e-2/assemble(int_0))
-        # int_1_scale.assign(1e-4/assemble(int_1))
-        # # print assemble(int_0)
-        # # print assemble(int_1)
-        # ### int_0 1e-2, int_1 1e-4 - worked well
+        if options.adjoint == 1:
+
+            phi_ic = project(Expression('0.03 - 0.005*sin(pi*x[0])'), model.phi_FS)
+            h_ic = project(Expression('0.4 - 0.05*cos(pi*x[0])'), model.h_FS)
+
+            q_a = Constant(0.1)
+            q_pa = Constant(0.6)
+            q_pb = Constant(0.2)
+
+            model.setup(h_ic = h_ic, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
+            model.solve(T = options.T)
+            (q, h, phi, c_d, x_N, u_N) = split(model.w[0])
+
+            # get model data
+            c_d_aim = sw_io.create_function_from_file('deposit_data.json', model.c_d_FS)
+            x_N_aim = sw_io.create_function_from_file('runout_data.json', model.var_N_FS)
+
+            # form Functional integrals
+            int_0_scale = Constant(1)
+            int_1_scale = Constant(1)
+            int_0 = inner(c_d-c_d_aim, c_d-c_d_aim)*int_0_scale*dx
+            int_1 = inner(x_N-x_N_aim, x_N-x_N_aim)*int_1_scale*dx
+
+            # determine scalaing
+            int_0_scale.assign(1e-1/assemble(int_0))
+            int_1_scale.assign(5e-3/assemble(int_1))
+            # int_1_scale.assign(0.0)
+            # print assemble(int_0)
+            # print assemble(int_1)
+            ### int_0 1e-2, int_1 1e-4 - worked well
+
+            # functional regularisation
+            reg_scale = Constant(1)
+            int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
+            reg_scale_base = 1e-3
+            reg_scale.assign(0.0) #reg_scale_base)
+
+            ## functional
+            J = Functional((int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
+
+        elif options.adjoint == 2:
+            
+            int_scale = Constant(1)
+            inv_x_N = 1.0/x_N
+            filter_val = 1.0-exp(10.0*inv_x_N*(model.X-model.L/x_N))
+            filter = (filter_val + (filter_val**2.0 + 1e-4)**0.5)/2.0
+
+            int = (1.0 - filter)*e**(10*grad(c_d))*int_scale*dx
+            int_scale.assign(1e-3/assemble(int))
+
+            reg_scale = Constant(-100.0)
+            int_reg = inner(grad(phi),grad(phi))*reg_scale*dx + inner(grad(h),grad(h))*reg_scale*dx
+
+            J = Functional(int*dt[FINISH_TIME] + int_reg*dt[START_TIME])
         
-        # ## functional regularisation
-        # reg_scale = Constant(1)
-        # int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
-        # reg_scale_base = 1e-3
-        # reg_scale.assign(reg_scale_base)
+        else:
 
-        # ## functional
-        # J = Functional((int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
+            print "which adjoint do you want?"
+            sys.exit()
 
-        int_scale = Constant(1)
-        x_N_ = Constant(sw_io.map_to_arrays(model)[4][0])
-        inv_x_N_ = Constant(1.0/sw_io.map_to_arrays(model)[4][0])
-        filter_val = 1.0-exp(10.0*inv_x_N_*(model.X-model.L/x_N_))
-        filter = (filter_val + (filter_val**2.0 + 1e-4)**0.5)/2.0
-
-        int = (1.0 - filter)*grad(c_d)*int_scale*dx
-        int_scale.assign(1e-1/assemble(int))
-
-        reg_scale = Constant(-1.0)
-        int_reg = inner(grad(phi),grad(phi))*reg_scale*dx
-        
-        J = Functional(int*dt[FINISH_TIME] + int_reg*dt[START_TIME])
-
-        tic()
-
-        dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic))
-
-        # print '* * * backward model took:', toc()
-        # list_timings(True)
-        # sys.exit()
+        dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic), forget=True)
+        import IPython
+        IPython.embed()
 
         # clear old data
         sw_io.clear_file('phi_ic_adj.json')
@@ -489,14 +542,16 @@ if __name__ == '__main__':
 
                 #### initial condition dump hack ####
                 phi_ic = value[0].vector().array()
-                h_ic = value[1].vector().array()
-                q_a_ = value[2]((0,0)); q_pa_ = value[3]((0,0)); q_pb_ = value[4]((0,0))
-                sw_io.write_array_to_file('phi_ic_adj_latest.json',phi_ic,'w')
-                sw_io.write_array_to_file('phi_ic_adj.json',phi_ic,'a')
-                sw_io.write_array_to_file('h_ic_adj_latest.json',h_ic,'w')
-                sw_io.write_array_to_file('h_ic_adj.json',h_ic,'a')
-                sw_io.write_q_vals_to_file('q_ic_adj_latest.json',q_a_,q_pa_,q_pb_,'w')
-                sw_io.write_q_vals_to_file('q_ic_adj.json',q_a_,q_pa_,q_pb_,'a')
+                sw_io.write_array_to_file('phi_ic_adj{}_latest.json'.format(options.adjoint),phi_ic,'w')
+                sw_io.write_array_to_file('phi_ic_adj{}.json'.format(options.adjoint),phi_ic,'a')
+                
+                # h_ic = value[1].vector().array()
+                # sw_io.write_array_to_file('h_ic_adj{}_latest.json'.format(options.adjoint),h_ic,'w')
+                # sw_io.write_array_to_file('h_ic_adj{}.json'.format(options.adjoint),h_ic,'a')
+
+                # q_a_ = value[2]((0,0)); q_pa_ = value[3]((0,0)); q_pb_ = value[4]((0,0))
+                # sw_io.write_q_vals_to_file('q_ic_adj{}_latest.json'.format(options.adjoint),q_a_,q_pa_,q_pb_,'w')
+                # sw_io.write_q_vals_to_file('q_ic_adj{}.json'.format(options.adjoint),q_a_,q_pa_,q_pb_,'a')
 
                 tic()
 
@@ -512,11 +567,11 @@ if __name__ == '__main__':
                 
                 list_timings(True)
 
-                sys.exit()
+                # sys.exit()
 
                 j = self.scale * func_value
                 j_log.append(j)
-                sw_io.write_array_to_file('j_log.json', j_log, 'w')
+                sw_io.write_array_to_file('j_log{}.json'.format(options.adjoint), j_log, 'w')
                 
                 print "* * * J = {}".format(j)
 
@@ -528,57 +583,55 @@ if __name__ == '__main__':
         #### END OF REDUCED FUNCTIONAL HACK
         #######################################
 
+        # reduced_functional = MyReducedFunctional(J, 
+        #                                          [InitialConditionParameter(phi_ic),
+        #                                           InitialConditionParameter(h_ic),
+        #                                           ScalarParameter(q_a), 
+        #                                           ScalarParameter(q_pa), 
+        #                                           ScalarParameter(q_pb)],
+        #                                          scale = 1e-0)
+
         reduced_functional = MyReducedFunctional(J, 
-                                                 [InitialConditionParameter(phi_ic),
-                                                  InitialConditionParameter(h_ic),
-                                                  ScalarParameter(q_a), 
-                                                  ScalarParameter(q_pa), 
-                                                  ScalarParameter(q_pb)],
+                                                 [InitialConditionParameter(phi_ic)],
                                                  scale = 1e-0)
         
         tic()
 
-        # for i in range(15):
-        #     reg_scale.assign(reg_scale_base*2**(0-i))
+        # bounds = [[1e-3, 0.1, 0.0, 0.2, 1.0], 
+        #           [1e-1, 0.5, 1.0, 0.99, 5.0]]
+        bounds = [[1e-3], 
+                  [1e-1]]
 
-        #     m_opt = minimize(reduced_functional, method = "L-BFGS-B", options = {'maxiter': 4, 'disp': True, 'gtol': 1e-9, 'ftol': 1e-9}, 
-        #                      bounds = (1e-7, 1e-0))
+        if options.adjoint == 1:
+            for i in range(15):
+                reg_scale.assign(reg_scale_base*2**(0-i))
 
-        m_opt = maximize(reduced_functional, 
+                m_opt = minimize(reduced_functional, method = "L-BFGS-B", 
+                                 options = {'maxiter': 4, 'disp': True, 'gtol': 1e-9, 'ftol': 1e-9}, 
+                                 bounds = bounds) 
+                
+        elif options.adjoint == 2:
+            m_opt = maximize(reduced_functional, 
                          method = "L-BFGS-B", 
-                         options = {'maxiter': 1, 'disp': True, 'gtol': 1e-20}, 
-                         bounds = [[5e-2, 0.1, 0.0, 0.2, 1.0], 
-                                   [2e-1, 0.4, 1.0, 0.99, 5.0]]) 
-
-        # print m_opt.vector().array()
-
-    # Adjoint 
-    elif options.phi_ic_test == True:
-
-        h_ic = sw_io.create_function_from_file('h_ic_adj_latest.json', model.h_FS)
-        phi_ic = sw_io.create_function_from_file('phi_ic_adj_latest.json', model.phi_FS)
-        q_a, q_pa, q_pb = sw_io.read_q_vals_from_file('q_ic_adj_latest.json')
-        print q_a, q_pa, q_pb
-        q_a = Constant(q_a); q_pa = Constant(q_pa); q_pb = Constant(q_pb)
-        
-        model.setup(h_ic = h_ic, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
-
-        model.solve(T = options.T)    
+                         options = {'disp': True, 'gtol': 1e-20}, 
+                         bounds = bounds)  
 
     else:  
 
-        phi_ic = project(Expression('0.01'), model.phi_FS)
-        h_ic = project(Expression('0.4'), model.h_FS)
+        phi_ic = project(Expression('0.02 - 0.002*sin(pi*x[0])'), model.phi_FS)
+        h_ic = project(Expression('0.4 - 0.05*cos(pi*x[0])'), model.h_FS)
 
         q_a = Constant(0.5)
         q_pa = Constant(0.1)
         q_pb = Constant(1.0)      
 
-        # phi_ic = project(Expression('0.03+0.005*sin(2*pi*x[0])'), model.phi_FS)
-        model.setup(phi_ic=phi_ic)
+        model.setup(h_ic = h_ic, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
 
         q, h, phi, c_d, x_N, u_N = sw_io.map_to_arrays(model)
-        sw_io.write_array_to_file('phi_ic.json', phi, 'w')
+        q_a_ = q_a((0,0)); q_pa_ = q_pa((0,0)); q_pb_ = q_pb((0,0))
+        sw_io.write_array_to_file('phi_ic.json', phi_ic.vector().array(), 'w')
+        sw_io.write_array_to_file('h_ic.json', h_ic.vector().array(), 'w')
+        sw_io.write_q_vals_to_file('q_ic.json',q_a_,q_pa_,q_pb_,'w')
 
         model.solve(T = options.T)
 

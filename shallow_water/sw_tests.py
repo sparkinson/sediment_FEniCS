@@ -62,8 +62,9 @@ class MMS_Model(sw.Model):
         # initialise plotting
         if self.plot:
             self.plotter = sw_io.Plotter(self)
+            self.plot_t = self.plot
 
-def mms_test(plot):
+def mms_test(plot, show, save):
 
     def getError(model):
         Fq = FunctionSpace(model.mesh, "CG", model.q_degree + 1)
@@ -86,6 +87,8 @@ def mms_test(plot):
 
     model = MMS_Model()
     model.plot = plot
+    model.show_plot = show
+    model.save_plot = save
 
     set_log_level(ERROR)
     
@@ -107,7 +110,7 @@ def mms_test(plot):
         print ( "h=%10.2E rh=%.2f rphi=%.2f rq=%.2f rc_d=%.2f Eh=%.2e Ephi=%.2e Eq=%.2e Ec_d=%.2e" 
                     % (h[i], rh, rphi, rq, rc_d, E[i][0], E[i][1], E[i][2], E[i][3]) )
 
-def taylor_tester(plot):
+def taylor_tester(plot, show, save):
 
     model = sw.Model()
 
@@ -115,13 +118,14 @@ def taylor_tester(plot):
     model.timestep = 1e-2
     # model.adapt_timestep = False
     model.plot = plot
+    model.show_plot = show
+    model.save_plot = save
 
     model.initialise_function_spaces()
     
     info_blue('Taylor test for phi')
 
     phi_ic = project(Expression('1.0'), model.phi_FS)
-    h_ic = project(Expression('0.4'), model.phi_FS)
     model.setup(phi_ic = phi_ic)
     model.solve(T = 0.03)       
 
@@ -137,7 +141,7 @@ def taylor_tester(plot):
     dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic), forget=False)
   
     def Jhat(phi_ic):
-        model.setup(phi_ic = phi_ic, h_ic = h_ic)
+        model.setup(phi_ic = phi_ic)
         model.solve(T = 0.03)
         w_0 = model.w[0]
         print 'Jhat: ', assemble(inner(w_0, w_0)*dx)
@@ -163,15 +167,21 @@ if __name__ == '__main__':
                       action='store_true', dest='taylor_test', default=False,
                       help='adjoint taylor test')
     parser.add_option('-p', '--plot',
-                      action='store_true', dest='plot', default=False,
-                      help='plot results in real-time')
+                      dest='plot', type=float, default=None,
+                      help='plot results in real-time - provide time between plots')
+    parser.add_option('-s', '--show_plot',
+                      dest='show_plot', action='store_true', default=False,
+                      help='show plots')
+    parser.add_option('-S', '--save_plot',
+                      dest='save_plot', action='store_true', default=False,
+                      help='save plots')
     (options, args) = parser.parse_args()
 
     # MMS test
     if options.mms == True:
-        mms_test(options.plot)
+        mms_test(options.plot, options.show_plot, options.save_plot)
 
     # taylor test
     if options.taylor_test == True:
-        taylor_tester(options.plot)
+        taylor_tester(options.plot, options.show_plot, options.save_plot)
     
