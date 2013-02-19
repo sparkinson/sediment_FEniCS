@@ -32,7 +32,7 @@ class MMS_Model(sw.Model):
                         mms.q(), 
                         mms.h(),
                         mms.phi(),
-                        mms.c_d(),
+                        mms.phi_d(),
                         'pi',
                         mms.u_N(),
                         )
@@ -43,16 +43,16 @@ class MMS_Model(sw.Model):
                           "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
         bcphi = DirichletBC(self.W.sub(2), Expression(mms.phi()), 
                             "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
-        bcc_d = DirichletBC(self.W.sub(3), Expression(mms.c_d()), 
+        bcphi_d = DirichletBC(self.W.sub(3), Expression(mms.phi_d()), 
                             "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
         bcq = DirichletBC(self.W.sub(0), Expression(mms.q()), "(near(x[0], 0.0)) && on_boundary")
-        self.bc = [bcq, bch, bcphi, bcc_d]
+        self.bc = [bcq, bch, bcphi, bcphi_d]
 
         # define source terms
         self.s_q = Expression(mms.s_q(), self.W.sub(0).ufl_element())
         self.s_h = Expression(mms.s_h(), self.W.sub(0).ufl_element())
         self.s_phi = Expression(mms.s_phi(), self.W.sub(0).ufl_element())
-        self.s_c_d = Expression(mms.s_c_d(), self.W.sub(0).ufl_element())
+        self.s_phi_d = Expression(mms.s_phi_d(), self.W.sub(0).ufl_element())
 
         self.timestep = dT
         self.adapt_timestep = False
@@ -70,20 +70,20 @@ def mms_test(plot, show, save):
         Fq = FunctionSpace(model.mesh, "CG", model.q_degree + 1)
         Fh = FunctionSpace(model.mesh, model.h_disc, model.h_degree + 1)
         Fphi = FunctionSpace(model.mesh, "CG", model.phi_degree + 1)
-        Fc_d = FunctionSpace(model.mesh, model.c_d_disc, model.c_d_degree + 1)
+        Fphi_d = FunctionSpace(model.mesh, model.phi_d_disc, model.phi_d_degree + 1)
 
         S_q = project(Expression(mms.q(), degree=5), Fq)
         S_h = project(Expression(mms.h(), degree=5), Fh)
         S_phi = project(Expression(mms.phi(), degree=5), Fphi)
-        S_c_d = project(Expression(mms.c_d(), degree=5), Fc_d)
+        S_phi_d = project(Expression(mms.phi_d(), degree=5), Fphi_d)
 
-        q, h, phi, c_d, x_N, u_N = model.w[0].split()
+        q, h, phi, phi_d, x_N, u_N = model.w[0].split()
         Eh = errornorm(h, S_h, norm_type="L2", degree_rise=2)
         Ephi = errornorm(phi, S_phi, norm_type="L2", degree_rise=2)
         Eq = errornorm(q, S_q, norm_type="L2", degree_rise=2)
-        Ec_d = errornorm(c_d, S_c_d, norm_type="L2", degree_rise=2)
+        Ephi_d = errornorm(phi_d, S_phi_d, norm_type="L2", degree_rise=2)
 
-        return Eh, Ephi, Eq, Ec_d        
+        return Eh, Ephi, Eq, Ephi_d        
 
     model = MMS_Model()
     model.plot = plot
@@ -106,9 +106,9 @@ def mms_test(plot, show, save):
         rh = np.log(E[i][0]/E[i-1][0])/np.log(h[i]/h[i-1])
         rphi = np.log(E[i][1]/E[i-1][1])/np.log(h[i]/h[i-1])
         rq = np.log(E[i][2]/E[i-1][2])/np.log(h[i]/h[i-1])
-        rc_d = np.log(E[i][3]/E[i-1][3])/np.log(h[i]/h[i-1])
-        print ( "h=%10.2E rh=%.2f rphi=%.2f rq=%.2f rc_d=%.2f Eh=%.2e Ephi=%.2e Eq=%.2e Ec_d=%.2e" 
-                    % (h[i], rh, rphi, rq, rc_d, E[i][0], E[i][1], E[i][2], E[i][3]) )
+        rphi_d = np.log(E[i][3]/E[i-1][3])/np.log(h[i]/h[i-1])
+        print ( "h=%10.2E rh=%.2f rphi=%.2f rq=%.2f rphi_d=%.2f Eh=%.2e Ephi=%.2e Eq=%.2e Ephi_d=%.2e" 
+                    % (h[i], rh, rphi, rq, rphi_d, E[i][0], E[i][1], E[i][2], E[i][3]) )
 
 def taylor_tester(plot, show, save):
 
@@ -125,8 +125,9 @@ def taylor_tester(plot, show, save):
     
     info_blue('Taylor test for phi')
 
-    phi_ic = project(Expression('1.0'), model.phi_FS)
-    model.setup(phi_ic = phi_ic)
+    ic = project(Expression('0.5'), model.phi_FS)
+    # ic = Constant(0.5)
+    model.setup(q_a = ic)
     model.solve(T = 0.03)       
 
     w_0 = model.w[0]
@@ -138,16 +139,18 @@ def taylor_tester(plot, show, save):
 
     parameters["adjoint"]["stop_annotating"] = True 
 
-    dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic), forget=False)
+    # dJdphi = compute_gradient(J, ScalarParameter(ic), forget=False)
+    dJdphi = compute_gradient(J, InitialConditionParameter(ic), forget=False)
   
-    def Jhat(phi_ic):
-        model.setup(phi_ic = phi_ic)
+    def Jhat(ic):
+        model.setup(q_a = ic)
         model.solve(T = 0.03)
         w_0 = model.w[0]
         print 'Jhat: ', assemble(inner(w_0, w_0)*dx)
         return assemble(inner(w_0, w_0)*dx)
 
-    conv_rate = taylor_test(Jhat, InitialConditionParameter(phi_ic), Jw, dJdphi, value = phi_ic, seed=1e-2)
+    # conv_rate = taylor_test(Jhat, ScalarParameter(ic), Jw, dJdphi, value = ic, seed=1e-2)
+    conv_rate = taylor_test(Jhat, InitialConditionParameter(ic), Jw, dJdphi, value = ic, seed=1e-2)
 
     info_blue('Minimum convergence order with adjoint information = {}'.format(conv_rate))
     if conv_rate > 1.9:

@@ -10,7 +10,7 @@ class Plotter():
         if model.show_plot:
             plt.ion()
         
-        q, h, phi, c_d, x_N, u_N = map_to_arrays(model)        
+        q, h, phi, phi_d, x_N, u_N = map_to_arrays(model)        
 
         if len(q) > len(h):
             indices = np.array([[i, i+2] for i in range(0, len(q), 2)]).flatten()
