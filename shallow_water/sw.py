@@ -48,7 +48,7 @@ class Model():
 
     # time stepping
     t = 0.0
-    timestep = 2e-1
+    timestep = 5e-1
     adapt_timestep = False
     cfl = Constant(0.5)
 
@@ -174,8 +174,8 @@ class Model():
             q_ic = Function(self.q_FS, name='q_ic')
             a = inner(test, trial)*dx
             q_b = Constant(1.0) - q_a  
-            f = ((q_a*cos((self.X**q_pa)*np.pi) + q_b*cos((self.X**q_pb)*np.pi)))/2.0
-            L = inner(test, self.X*q_N_ic)*dx             
+            f = (1.0 - (q_a*cos(((self.X/self.L)**q_pa)*np.pi) + q_b*cos(((self.X/self.L)**q_pb)*np.pi)))/2.0
+            L = inner(test, f*q_N_ic)*dx             
             solve(a == L, q_ic)
 
             self.w_ic = [
@@ -435,10 +435,10 @@ if __name__ == '__main__':
             h_ic = sw_io.create_function_from_file('h_ic_adj{}_latest.json'.format(options.adjoint), model.h_FS)
             phi_ic = sw_io.create_function_from_file('phi_ic_adj{}_latest.json'.format(options.adjoint), model.phi_FS)
             # phi_ic = sw_io.create_function_from_file('phi_ic.json'.format(options.adjoint), model.phi_FS)
-            # q_a, q_pa, q_pb = sw_io.read_q_vals_from_file('q_ic_adj{}_latest.json'.format(options.adjoint))
-            q_a = 0.0
-            q_pa = 0.1
-            q_pb = 1.0
+            q_a, q_pa, q_pb = sw_io.read_q_vals_from_file('q_ic_adj{}_latest.json'.format(options.adjoint))
+            # q_a = 0.0
+            # q_pa = 0.1
+            # q_pb = 1.0
 
             print q_a, q_pa, q_pb
 
@@ -458,7 +458,7 @@ if __name__ == '__main__':
 
         if options.adjoint == 1:
 
-            phi_ic = project(Expression('0.03'), model.phi_FS)
+            phi_ic = project(Expression('0.001'), model.phi_FS)
             h_ic = project(Expression('0.4 - 0.05*cos(pi*x[0])'), model.h_FS)
 
             q_a = Constant(0.0)
@@ -481,8 +481,7 @@ if __name__ == '__main__':
 
             # determine scalaing
             int_0_scale.assign(1e-2/assemble(int_0))
-            int_1_scale.assign(5e-4/assemble(int_1))
-            # int_1_scale.assign(0.0)
+            int_1_scale.assign(5e-5/assemble(int_1))
             # print assemble(int_0)
             # print assemble(int_1)
             ### int_0 1e-2, int_1 1e-4 - worked well
@@ -490,15 +489,19 @@ if __name__ == '__main__':
             # functional regularisation
             reg_scale = Constant(1)
             int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
-            reg_scale_base = 1e-3
-            reg_scale.assign(0.0) #reg_scale_base)
+            reg_scale_base = 1e-2
+            reg_scale.assign(reg_scale_base)
 
             ## functional
-            J = Functional((int_0 + int_1)*dt[FINISH_TIME]) # + int_reg*dt[START_TIME])
+            J = Functional((int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
+
+            # dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic), forget=True)
+            # import IPython
+            # IPython.embed()
 
         elif options.adjoint == 2:
 
-            phi_ic = project(Expression('0.02'), model.phi_FS)
+            phi_ic = project(Expression('0.01'), model.phi_FS)
             h_ic = project(Expression('0.2'), model.h_FS)
 
             q_a = Constant(0.0)
@@ -509,13 +512,13 @@ if __name__ == '__main__':
             model.solve(T = options.T)
             (q, h, phi, phi_d, x_N, u_N) = split(model.w[0])
             
+            # positive gradients
             int_scale = Constant(1)
             inv_x_N = 1.0/x_N
-            filter_val = 1.0-exp(10.0*inv_x_N*(model.X-model.L/x_N))
+            filter_val = 1.0-exp(1e1*inv_x_N*(model.X-model.L/x_N))
             filter = (filter_val + (filter_val**2.0 + 1e-4)**0.5)/2.0
-            # filter = 0.0
-
-            int = (1.0 - filter)*(exp(grad(phi_d)) - 1.0)*int_scale*dx
+            int = (1.0 - filter)*(exp(1e3*grad(phi_d)) - 1.0)*int_scale*dx
+            int_scale.assign(1e-2/abs(assemble(int)))
 
             # func = Function(model.phi_FS)
             # trial = TrialFunction(model.phi_FS)
@@ -523,18 +526,15 @@ if __name__ == '__main__':
             # a = inner(test, trial)*dx
             # L = inner(test, int)*dx             
             # solve(a == L, func)
-
             # print func.vector().array()
-
             # sys.exit()
 
-            int_scale.assign(1e-2/abs(assemble(int)))
-
             # mass conservation
-            int_cons = 1e10*(phi - phi_ic)*dx
+            phi_ic_save = phi_ic.copy(deepcopy = True)
+            int_cons = Constant(-1e0)*(phi - phi_ic_save)**2.0*dx
 
             # regulator
-            reg_scale = Constant(-1e1)
+            reg_scale = Constant(-1e0)
             int_reg = inner(grad(phi),grad(phi))*reg_scale*dx + inner(grad(h),grad(h))*reg_scale*dx
 
             J = Functional(int*dt[FINISH_TIME] + (int_reg + int_cons)*dt[START_TIME])
@@ -543,10 +543,6 @@ if __name__ == '__main__':
 
             print "which adjoint do you want?"
             sys.exit()
-
-        # dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic), forget=True)
-        # import IPython
-        # IPython.embed()
 
         # clear old data
         sw_io.clear_file('phi_ic_adj{}.json'.format(options.adjoint))
@@ -585,9 +581,6 @@ if __name__ == '__main__':
                     q_a_ = value[2]((0,0)); q_pa_ = value[3]((0,0)); q_pb_ = value[4]((0,0))
                     sw_io.write_q_vals_to_file('q_ic_adj{}_latest.json'.format(options.adjoint),q_a_,q_pa_,q_pb_,'w')
                     sw_io.write_q_vals_to_file('q_ic_adj{}.json'.format(options.adjoint),q_a_,q_pa_,q_pb_,'a')
-
-                    import IPython
-                    IPython.embed()
                 except:
                     pass
 
@@ -635,13 +628,13 @@ if __name__ == '__main__':
             bounds = [[1e-3], 
                       [1e-1]]
 
-            # for i in range(15):
-            #     reg_scale.assign(reg_scale_base*2**(0-i))
-
-            m_opt = minimize(reduced_functional, method = "L-BFGS-B", 
-                             options = {# 'maxiter': 4, 
-                                        'disp': True, 'gtol': 1e-9, 'ftol': 1e-9}, 
-                             bounds = bounds) 
+            for i in range(15):
+                reg_scale.assign(reg_scale_base*2**(0-i))
+                
+                m_opt = minimize(reduced_functional, method = "L-BFGS-B", 
+                                 options = {'maxiter': 6, 
+                                            'disp': True, 'gtol': 1e-9, 'ftol': 1e-9}, 
+                                 bounds = bounds) 
                 
         elif options.adjoint == 2:
 
@@ -652,15 +645,15 @@ if __name__ == '__main__':
             reduced_functional = MyReducedFunctional(J, 
                                                      [InitialConditionParameter(phi_ic),
                                                       InitialConditionParameter(h_ic),
-                                                      # ScalarParameter(q_a), 
-                                                      # ScalarParameter(q_pa), 
-                                                      # ScalarParameter(q_pb)
+                                                      ScalarParameter(q_a), 
+                                                      ScalarParameter(q_pa), 
+                                                      ScalarParameter(q_pb)
                                                       ]# ,
                                                      # derivative_cb = d_cb
                                                      )
-            bounds = [[1e-3, 0.1# , 0.0, 0.2, 1.0
+            bounds = [[1e-3, 0.1, 0.0, 0.2, 1.0
                        ], 
-                      [1e-1, 0.5# , 1.0, 0.99, 5.0
+                      [1e-1, 0.5, 1.0, 0.99, 5.0
                        ]]
 
             m_opt = maximize(reduced_functional, 
