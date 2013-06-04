@@ -55,7 +55,7 @@ class Plotter():
         x_lim = x_N[0]
         self.q_plot.set_autoscaley_on(False)
         self.q_plot.set_xlim([0.0,x_lim])
-        self.q_plot.set_ylim([-self.u_y_lim/5.0,self.u_y_lim])
+        self.q_plot.set_ylim([0.0,self.u_y_lim])
         self.h_plot.set_autoscaley_on(False)
         self.h_plot.set_xlim([0.0,x_lim])
         self.h_plot.set_ylim([0.0,self.h_y_lim])
@@ -78,12 +78,15 @@ class Plotter():
         if len(u) > len(val_x):
             v = val_x
             val_x = [v[0]]
-            for x in v[1:-1]:
-                val_x.append(x)
-                val_x.append(x)
+            for val_x_ in v[1:-1]:
+                val_x.append(val_x_)
+                val_x.append(val_x_)
             val_x.append(v[-1])
-        
+
         return np.interp(x, val_x, u) 
+
+    def clean_up(self):
+        plt.close()
 
 def print_timestep_info(model, delta):
     

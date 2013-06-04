@@ -9,7 +9,7 @@ import numpy as np
 import sys
 
 class MMS_Model(sw.Model):
-    def setup(self, dX, dT):
+    def setup(self, dX, dT, disc):
         self.mms = True
 
         # define constants
@@ -19,11 +19,18 @@ class MMS_Model(sw.Model):
         self.g = Constant(1.0)
         self.rho_R_ = 1.0
         self.rho_R = Constant(1.0)
-        self.q_b = Constant(1.0 / dX)
+        self.q_b = Constant(1e-1 / dX)
         self.Fr_ = 1.0
         self.Fr = Constant(1.0)
         self.u_sink_ = 1.0
         self.u_sink = Constant(1.0)
+
+        self.h_b = Constant(0.0)
+        self.phi_b = Constant(0.0)
+        self.phi_d_b = Constant(0.0)
+
+        self.h_disc = disc
+        self.phi_d_disc = disc
         
         self.initialise_function_spaces()
 
@@ -45,7 +52,8 @@ class MMS_Model(sw.Model):
                             "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
         bcphi_d = DirichletBC(self.W.sub(3), Expression(mms.phi_d()), 
                             "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
-        bcq = DirichletBC(self.W.sub(0), Expression(mms.q()), "(near(x[0], 0.0)) && on_boundary")
+        bcq = DirichletBC(self.W.sub(0), Expression(mms.q()), 
+                          "(near(x[0], 0.0)) && on_boundary")
         self.bc = [bcq, bch, bcphi, bcphi_d]
 
         # define source terms
@@ -83,23 +91,47 @@ def mms_test(plot, show, save):
         Eq = errornorm(q, S_q, norm_type="L2", degree_rise=2)
         Ephi_d = errornorm(phi_d, S_phi_d, norm_type="L2", degree_rise=2)
 
-        return Eh, Ephi, Eq, Ephi_d        
+        return Eh, Ephi, Eq, Ephi_d 
 
     model = MMS_Model()
     model.plot = plot
     model.show_plot = show
     model.save_plot = save
+ 
+    set_log_level(ERROR)    
 
-    set_log_level(ERROR)
+    disc = 'CG'
+    print disc
     
     h = [] # element sizes
     E = [] # errors
-    for i, nx in enumerate([4, 8, 16, 24]):
+    for i, nx in enumerate([4, 8, 16]):#, 24]):
         dT = (pi/nx) * 0.5
         h.append(pi/nx)
         print 'dt is: ', dT, '; h is: ', h[-1]
-        model.setup(h[-1], dT)
-        model.solve(tol = 1e-3)
+        model.setup(h[-1], dT, disc)
+        model.solve(tol = 1e-2)
+        E.append(getError(model))
+
+    for i in range(1, len(E)):
+        rh = np.log(E[i][0]/E[i-1][0])/np.log(h[i]/h[i-1])
+        rphi = np.log(E[i][1]/E[i-1][1])/np.log(h[i]/h[i-1])
+        rq = np.log(E[i][2]/E[i-1][2])/np.log(h[i]/h[i-1])
+        rphi_d = np.log(E[i][3]/E[i-1][3])/np.log(h[i]/h[i-1])
+        print ( "h=%10.2E rh=%.2f rphi=%.2f rq=%.2f rphi_d=%.2f Eh=%.2e Ephi=%.2e Eq=%.2e Ephi_d=%.2e" 
+                    % (h[i], rh, rphi, rq, rphi_d, E[i][0], E[i][1], E[i][2], E[i][3]) )    
+
+    disc = 'DG'
+    print disc
+    
+    h = [] # element sizes
+    E = [] # errors
+    for i, nx in enumerate([4, 8, 16]):#, 24]):
+        dT = (pi/nx) * 0.5
+        h.append(pi/nx)
+        print 'dt is: ', dT, '; h is: ', h[-1]
+        model.setup(h[-1], dT, disc)
+        model.solve(tol = 1e-2)
         E.append(getError(model))
 
     for i in range(1, len(E)):

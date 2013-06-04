@@ -24,7 +24,7 @@ solver_parameters["newton_solver"]["maximum_iterations"] = 15
 solver_parameters["newton_solver"]["relaxation_parameter"] = 1.0
 # info(parameters, True)
 # set_log_active(False)
-set_log_level(PROGRESS)
+set_log_level(ERROR)
 
 ############################################################
 # TIME DISCRETISATION FUNCTIONS
@@ -61,17 +61,25 @@ class Model():
     # smoothing eps value
     eps = 1e-12
 
-    # define stabilisation parameters
-    q_b = 0.3
-    h_b = 0.1
-    phi_b = 0.1
-    phi_d_b = 0.3
+    # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
+    q_b = Constant(0.1)
+    h_b = Constant(0.1)
+    phi_b = Constant(0.1)
+    phi_d_b = Constant(0.1)
+
+    # discretisation
+    q_degree = 2
+    h_degree = 1
+    phi_degree = 1
+    phi_d_degree = 1
+    h_disc = "CG"
+    phi_d_disc = "CG"
 
     def initialise_function_spaces(self):
 
         # define geometry
         self.mesh = IntervalMesh(int(self.L_/self.dX_), 0.0, self.L_)
-        self.n = FacetNormal(self.mesh)
+        self.n = FacetNormal(self.mesh)[0]
 
         self.dX = Constant(self.dX_)
         self.L = Constant(self.L_)
@@ -87,15 +95,9 @@ class Model():
         self.ds = Measure("ds")[exterior_facet_domains] 
 
         # define function spaces
-        self.q_degree = 2
         self.q_FS = FunctionSpace(self.mesh, "CG", self.q_degree)
-        self.h_degree = 1
-        self.h_disc = "CG"
         self.h_FS = FunctionSpace(self.mesh, self.h_disc, self.h_degree)
-        self.phi_degree = 1
         self.phi_FS = FunctionSpace(self.mesh, "CG", self.phi_degree)
-        self.phi_d_degree = 1
-        self.phi_d_disc = "CG"
         self.phi_d_FS = FunctionSpace(self.mesh, self.phi_d_disc, self.phi_d_degree)
         self.var_N_FS = FunctionSpace(self.mesh, "R", 0)
         self.W = MixedFunctionSpace([self.q_FS, self.h_FS, self.phi_FS, self.phi_d_FS, self.var_N_FS, self.var_N_FS])
@@ -104,14 +106,14 @@ class Model():
         # get dof_maps for plots
         self.map_dict = dict()
         for i in range(6):
-            if len(self.W.sub(i).dofmap().dofs()) == len(self.mesh.cells()) + 1:   # P1CG 
+            if self.W.sub(i).dofmap().global_dimension() == len(self.mesh.cells()) + 1:   # P1CG 
                 self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j)[0] for j in range(len(self.mesh.cells()))]
                 self.map_dict[i].append(self.W.sub(i).dofmap().cell_dofs(len(self.mesh.cells()) - 1)[-1])
-            elif len(self.W.sub(i).dofmap().dofs()) == len(self.mesh.cells()) * 2 + 1:   # P2CG 
+            elif self.W.sub(i).dofmap().global_dimension() == len(self.mesh.cells()) * 2 + 1:   # P2CG 
                 self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j)[:-1] for j in range(len(self.mesh.cells()))]
                 self.map_dict[i] = list(np.array(self.map_dict[i]).flatten())
                 self.map_dict[i].append(self.W.sub(i).dofmap().cell_dofs(len(self.mesh.cells()) - 1)[-1])    
-            elif len(self.W.sub(i).dofmap().dofs()) == len(self.mesh.cells()) * 2:   # P1DG
+            elif self.W.sub(i).dofmap().global_dimension() == len(self.mesh.cells()) * 2:   # P1DG
                 self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j) for j in range(len(self.mesh.cells()))]
                 self.map_dict[i] = list(np.array(self.map_dict[i]).flatten())
             else:   # R
@@ -272,14 +274,14 @@ class Model():
             if type(b_val) == type(None):
                 b_val = u
 
-            F = - self.k*grad(v)*ux*u*dx - self.k*v*grad(ux)*u*dx 
+            F = - self.k*grad(v)[0]*ux*u*dx - self.k*v*grad(ux)[0]*u*dx 
             
             if disc == "CG":
                 F += self.k*v*self.n*ux*b_val*weak_b
-                if stab > 0.0:
+                if stab((0,0)) > 0.0:
                     tau = Constant(stab)*self.dX/smooth_abs(ux)
-                    F += tau*inner(ux, grad(v))*inner(ux, grad(u))*self.k*dx - \
-                        tau*inner(ux, self.n*v)*inner(ux, grad(b_val))*self.k*weak_b
+                    F += tau*ux*grad(v)[0]*ux*grad(u)[0]*self.k*dx - \
+                        tau*ux*self.n*v*ux*grad(b_val)[0]*self.k*weak_b
             elif disc == "DG":
                 F += avg(self.k)*jump(v)*(uxn_up('+')*u('+') - uxn_up('-')*u('-'))*dS 
                 if self.mms:
@@ -293,26 +295,26 @@ class Model():
 
         # momentum 
         F_q = x_N_td*self.q_tf*(q[0] - q[1])*dx + \
-            self.k*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)*dx
-        F_q += transForm(q_td, self.q_tf, 0, "CG", 0.0, self.ds(1), u_N_td*h_td)
+            self.k*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)[0]*dx
+        F_q += transForm(q_td, self.q_tf, 0, "CG", Constant(0.0), self.ds(1), u_N_td*h_td)
         # stabilisation
         u = q_td/h_td
         alpha = self.q_b*self.dX*(smooth_abs(u)+u+(phi_td*h_td)**0.5)*h_td
-        F_q += self.k*grad(self.q_tf)*alpha*grad(u)*dx - \
-            self.k*self.q_tf*alpha*grad(u)*self.n*self.ds(1)  
+        F_q += self.k*grad(self.q_tf)[0]*alpha*grad(u)[0]*dx - \
+            self.k*self.q_tf*alpha*grad(u)[0]*self.n*self.ds(1)  
         if self.mms:
             F_q += x_N_td*self.q_tf*self.s_q*self.k*dx
 
         # conservation 
         F_h = x_N_td*self.h_tf*(h[0] - h[1])*dx + \
-            self.k*self.h_tf*grad(q_td)*dx
+            self.k*self.h_tf*grad(q_td)[0]*dx
         F_h += transForm(h_td, self.h_tf, 1, self.h_disc, self.h_b, self.ds(0) + self.ds(1))
         if self.mms:
             F_h += x_N_td*self.h_tf*self.s_h*self.k*dx
 
         # mass volume per unit width of sediment = g'(phi)*h = R*g*c*h
         F_phi = x_N_td*self.phi_tf*(phi[0] - phi[1])*dx + \
-            self.phi_tf*grad(q_td*phi_td/h_td)*self.k*dx + \
+            self.phi_tf*grad(q_td*phi_td/h_td)[0]*self.k*dx + \
             x_N_td*self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx
         F_phi += transForm(phi_td, self.phi_tf, 2, "CG", self.phi_b, self.ds(0) + self.ds(1))
         if self.mms:
@@ -335,6 +337,7 @@ class Model():
 
         # combine PDE's
         self.F = F_q + F_h + F_phi + F_phi_d + F_x_N + F_u_N
+        # self.F = F_h
 
         # compute directional derivative about u in the direction of du (Jacobian)
         self.J = derivative(self.F, self.w[0], trial)
@@ -393,6 +396,9 @@ class Model():
         print "\n* * * Initial forward run finished: time taken = {}".format(toc())
         list_timings(True)
 
+        if self.plot:
+            self.plotter.clean_up()
+
 if __name__ == '__main__':
 
     parser = OptionParser()
@@ -401,18 +407,21 @@ if __name__ == '__main__':
     parser.add_option('-a', '--adjoint',
                       dest='adjoint', type=int, default=None,
                       help='adjoint run')
-    parser.add_option('-t', '--phi_ic_test',
-                      action='store_true', dest='phi_ic_test', default=False,
-                      help='test phi initial conditions')
+    parser.add_option('-t', '--adjoint_test',
+                      action='store_true', dest='adjoint_test', default=False,
+                      help='test adjoint solution')
     parser.add_option('-z', '--phi_ic_test2',
                       action='store_true', dest='phi_ic_test2', default=False,
                       help='test phi initial conditions type 2')
     parser.add_option('-T', '--end_time',
-                      dest='T', type=float, default=0.2,
+                      dest='T', type=float, default=60.0,
                       help='simulation end time')
     parser.add_option('-p', '--plot',
-                      dest='plot', type=float, default=None,
-                      help='plot results in real-time - provide time between plots')
+                      dest='plot', action='store_true', default=False,
+                      help='plot results in real-time')
+    parser.add_option('-P', '--plot-freq',
+                      dest='plot_freq', type=float, default=0.00001,
+                      help='provide time between plots')
     parser.add_option('-s', '--show_plot',
                       dest='show_plot', action='store_true', default=False,
                       help='show plots')
@@ -422,50 +431,24 @@ if __name__ == '__main__':
     (options, args) = parser.parse_args()
     
     model = Model()
-    model.plot = options.plot
+    if options.plot:
+        model.plot = options.plot_freq
     model.save_plot = options.save_plot
     model.show_plot = options.show_plot
     model.initialise_function_spaces()
 
-    # Adjoint test
-    if options.phi_ic_test == True:
-
-        if options.adjoint == 1 or options.adjoint == 2:
-            
-            h_ic = sw_io.create_function_from_file('h_ic_adj{}_latest.json'.format(options.adjoint), model.h_FS)
-            phi_ic = sw_io.create_function_from_file('phi_ic_adj{}_latest.json'.format(options.adjoint), model.phi_FS)
-            # phi_ic = sw_io.create_function_from_file('phi_ic.json'.format(options.adjoint), model.phi_FS)
-            q_a, q_pa, q_pb = sw_io.read_q_vals_from_file('q_ic_adj{}_latest.json'.format(options.adjoint))
-            # q_a = 0.0
-            # q_pa = 0.1
-            # q_pb = 1.0
-
-            print q_a, q_pa, q_pb
-
-        else:
-
-            print "which adjoint test do you want?"
-            sys.exit()
-
-        q_a = Constant(q_a); q_pa = Constant(q_pa); q_pb = Constant(q_pb)
-        
-        model.setup(h_ic = h_ic, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
-
-        model.solve(T = options.T) 
-
     # Adjoint 
-    elif options.adjoint:
+    if options.adjoint:
 
         if options.adjoint == 1:
 
-            phi_ic = project(Expression('0.001'), model.phi_FS)
-            h_ic = project(Expression('0.4 - 0.05*cos(pi*x[0])'), model.h_FS)
-
-            q_a = Constant(0.0)
-            q_pa = Constant(0.1)
-            q_pb = Constant(1.0)
-
-            model.setup(h_ic = h_ic, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
+            if options.adjoint_test:
+                phi_ic = sw_io.create_function_from_file('phi_ic_adj{}_latest.json'.
+                                                         format(options.adjoint), model.phi_FS)
+            else:
+                phi_ic = project(Expression('0.01'), model.phi_FS)
+                
+            model.setup(phi_ic = phi_ic)#, h_ic=h_ic)
             model.solve(T = options.T)
             (q, h, phi, phi_d, x_N, u_N) = split(model.w[0])
 
@@ -479,46 +462,62 @@ if __name__ == '__main__':
             int_0 = inner(phi_d-phi_d_aim, phi_d-phi_d_aim)*int_0_scale*dx
             int_1 = inner(x_N-x_N_aim, x_N-x_N_aim)*int_1_scale*dx
 
-            # determine scalaing
+            # determine scaling
             int_0_scale.assign(1e-2/assemble(int_0))
-            int_1_scale.assign(5e-5/assemble(int_1))
-            # print assemble(int_0)
-            # print assemble(int_1)
+            int_1_scale.assign(1e-4/assemble(int_1)) # 1e-4 t=5.0, 1e-4 t=10.0
             ### int_0 1e-2, int_1 1e-4 - worked well
 
             # functional regularisation
             reg_scale = Constant(1)
             int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
-            reg_scale_base = 1e-2
+            reg_scale_base = 1e-2       # 1e-2 for t=10.0
             reg_scale.assign(reg_scale_base)
 
-            ## functional
-            J = Functional((int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
+            # functional
+            scaling = Constant(1e-1)  # 1e0 t=5.0, 1e-1 t=10.0
+            J = Functional(scaling*(int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
 
             # dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic), forget=True)
             # import IPython
             # IPython.embed()
 
         elif options.adjoint == 2:
+            model.q_b.assign(0.2)
+            model.h_b.assign(0.2)
+            model.phi_b.assign(0.2)
+            model.phi_d_b.assign(0.1)
 
-            phi_ic = project(Expression('0.01'), model.phi_FS)
-            h_ic = project(Expression('0.2'), model.h_FS)
+            phi_ic_0 = project(Expression('0.005'), model.phi_FS)
+            if options.adjoint_test:
+                # h_ic = sw_io.create_function_from_file('h_ic_adj{}_latest.json'.
+                #                                         format(options.adjoint), model.h_FS)
+                phi_ic = sw_io.create_function_from_file('phi_ic_adj{}_latest.json'.
+                                                          format(options.adjoint), model.phi_FS)
+                # q_a, q_pa, q_pb = sw_io.read_q_vals_from_file('q_ic_adj{}_latest.json'.
+                #                                                format(options.adjoint))
+                # q_a = Constant(q_a); q_pa = Constant(q_pa); q_pb = Constant(q_pb)
+            else:
+                phi_ic = phi_ic_0.copy(deepcopy = True)
+                # h_ic = project(Expression('0.2'), model.h_FS)
+                # q_a = Constant(0.0)
+                # q_pa = Constant(0.5)
+                # q_pb = Constant(1.0)
 
-            q_a = Constant(0.0)
-            q_pa = Constant(0.5)
-            q_pb = Constant(1.0)
-
-            model.setup(h_ic = h_ic, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
+            model.setup(phi_ic = phi_ic) #, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
             model.solve(T = options.T)
             (q, h, phi, phi_d, x_N, u_N) = split(model.w[0])
             
             # positive gradients
             int_scale = Constant(1)
             inv_x_N = 1.0/x_N
-            filter_val = 1.0-exp(1e1*inv_x_N*(model.X-model.L/x_N))
-            filter = (filter_val + (filter_val**2.0 + 1e-4)**0.5)/2.0
-            int = (1.0 - filter)*(exp(1e3*grad(phi_d)) - 1.0)*int_scale*dx
-            int_scale.assign(1e-2/abs(assemble(int)))
+            filter_val = 1.0-exp(1e1*(model.X*model.x_N_/x_N - 1.0))
+            filter = (filter_val + abs(filter_val))/2.0
+            pos_grads_on = (grad(phi_d) + abs(grad(phi_d)))/(2*grad(phi_d))
+            neg_grads_on = (grad(phi_d) - abs(grad(phi_d)))/(2*grad(phi_d))
+            pos_f = pos_grads_on*(1.0 - exp(-1e5*grad(phi_d)))
+            neg_f = neg_grads_on*(exp(1e5*grad(phi_d)) - 1.0)/(x_N-model.L)
+            int = (1.0 - filter)*(pos_f + neg_f)*int_scale
+            int_scale.assign(1e-2/abs(assemble(int*dx)))
 
             # func = Function(model.phi_FS)
             # trial = TrialFunction(model.phi_FS)
@@ -530,18 +529,58 @@ if __name__ == '__main__':
             # sys.exit()
 
             # mass conservation
-            phi_ic_save = phi_ic.copy(deepcopy = True)
-            int_cons = Constant(-1e0)*(phi - phi_ic_save)**2.0*dx
+            # int_cons = Constant(-1e2)*(phi*dx - phi_ic_0*dx)
 
-            # regulator
-            reg_scale = Constant(-1e0)
-            int_reg = inner(grad(phi),grad(phi))*reg_scale*dx + inner(grad(h),grad(h))*reg_scale*dx
+            # regulator    pow 4 scale -5e-2 / pow 3 scale -5e-2
+            reg_scale = Constant(-5e-2)
+            reg_power = Constant(2.0)
+            int_reg = (inner(grad(phi),grad(phi))**reg_power*reg_scale + 
+                       inner(grad(h),grad(h))**reg_power*reg_scale)
 
-            J = Functional(int*dt[FINISH_TIME] + (int_reg + int_cons)*dt[START_TIME])
+            scaling = Constant(1e-1)  
+            J = Functional(scaling*int*dx*dt[FINISH_TIME] + scaling*int_reg*dx*dt[START_TIME])
+
+            print int_scale((0,0))
+            q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model)
+            sw_io.write_array_to_file('deposit_data.json', phi_d, 'w')
+            sw_io.write_array_to_file('runout_data.json', x_N, 'w')
+            sys.exit()
+
+            # dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic), forget=False)
+            # import IPython
+            # IPython.embed()
         
         else:
 
             print "which adjoint do you want?"
+            sys.exit()
+
+        if options.adjoint_test:
+
+            g = Function(model.phi_FS)
+            reg = Function(model.phi_FS)
+
+            trial = TrialFunction(model.phi_FS)
+            test = TestFunction(model.phi_FS)
+            a = inner(test, trial)*dx
+
+            L_g = inner(test, int)*dx  
+            L_reg = inner(test, int_reg)*dx             
+            solve(a == L_g, g)            
+            solve(a == L_reg, reg)
+
+            q_, h_, phi_, phi_d_, x_N_, u_N_ = sw_io.map_to_arrays(model)
+
+            import matplotlib.pyplot as plt
+
+            dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic), forget=False)
+            # dJdh = compute_gradient(J, InitialConditionParameter(h_ic), forget=False)
+            # dJdq_a = compute_gradient(J, ScalarParameter(q_a), forget=False)
+            # dJdq_pa = compute_gradient(J, ScalarParameter(q_a), forget=False)
+            # dJdq_pb = compute_gradient(J, ScalarParameter(q_a), forget=False)
+            import IPython
+            IPython.embed()
+
             sys.exit()
 
         # clear old data
@@ -632,8 +671,8 @@ if __name__ == '__main__':
                 reg_scale.assign(reg_scale_base*2**(0-i))
                 
                 m_opt = minimize(reduced_functional, method = "L-BFGS-B", 
-                                 options = {'maxiter': 6, 
-                                            'disp': True, 'gtol': 1e-9, 'ftol': 1e-9}, 
+                                 options = {'maxiter': 5,
+                                            'disp': True, 'gtol': 1e-20, 'ftol': 1e-20}, 
                                  bounds = bounds) 
                 
         elif options.adjoint == 2:
@@ -644,16 +683,17 @@ if __name__ == '__main__':
 
             reduced_functional = MyReducedFunctional(J, 
                                                      [InitialConditionParameter(phi_ic),
-                                                      InitialConditionParameter(h_ic),
-                                                      ScalarParameter(q_a), 
-                                                      ScalarParameter(q_pa), 
-                                                      ScalarParameter(q_pb)
-                                                      ]# ,
+                                                      # InitialConditionParameter(h_ic),
+                                                      # ScalarParameter(q_a), 
+                                                      # ScalarParameter(q_pa), 
+                                                      # ScalarParameter(q_pb)
+                                                      ],
+                                                     # scale = 1e-4,
                                                      # derivative_cb = d_cb
                                                      )
-            bounds = [[1e-3, 0.1, 0.0, 0.2, 1.0
+            bounds = [[5e-3# , 0.1, 0.0, 0.2, 1.0
                        ], 
-                      [1e-1, 0.5, 1.0, 0.99, 5.0
+                      [5e-2# , 0.5, 1.0, 0.99, 5.0
                        ]]
 
             m_opt = maximize(reduced_functional, 
@@ -663,20 +703,19 @@ if __name__ == '__main__':
 
     else:  
 
+        # h_ic = project(Expression('0.3 - 0.1*cos(pi*x[0])'), model.h_FS)
         phi_ic = project(Expression('0.02 - 0.007*cos(pi*x[0])'), model.phi_FS)
-        h_ic = project(Expression('0.4 - 0.05*cos(pi*x[0])'), model.h_FS)
 
-        q_a = Constant(0.0)
-        q_pa = Constant(0.1)
-        q_pb = Constant(1.0)      
+        # phi_ic = sw_io.create_function_from_file('phi_ic_adj1_latest.json'.
+        #                                          format(options.adjoint), model.phi_FS)
 
-        model.setup(h_ic = h_ic, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
+        model.setup(phi_ic = phi_ic) #, h_ic = h_ic)
 
         q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model)
-        q_a_ = q_a((0,0)); q_pa_ = q_pa((0,0)); q_pb_ = q_pb((0,0))
         sw_io.write_array_to_file('phi_ic.json', phi_ic.vector().array(), 'w')
-        sw_io.write_array_to_file('h_ic.json', h_ic.vector().array(), 'w')
-        sw_io.write_q_vals_to_file('q_ic.json',q_a_,q_pa_,q_pb_,'w')
+        # sw_io.write_array_to_file('h_ic.json', h_ic.vector().array(), 'w')
+        # q_a_ = q_a((0,0)); q_pa_ = q_pa((0,0)); q_pb_ = q_pb((0,0))
+        # sw_io.write_q_vals_to_file('q_ic.json',q_a_,q_pa_,q_pb_,'w')
 
         model.solve(T = options.T)
 
