@@ -50,14 +50,20 @@ class Model():
     # time stepping
     t = 0.0
     timestep = dX_/50.0 #5e-3
-    adapt_timestep = True
-    cfl = Constant(0.05)
+    adapt_timestep = False
+    cfl = Constant(0.2)
 
     # mms test (default False)
     mms = False
 
     # display plot
     plot = None
+
+    # output data
+    write = None
+
+    # save location
+    save_loc = 'results/'
 
     # smoothing eps value
     eps = 1e-12
@@ -132,7 +138,7 @@ class Model():
 
     def setup(self, h_ic = None, phi_ic = None, 
               q_a = Constant(0.0), q_pa = Constant(0.0), q_pb = Constant(1.0), 
-              w_ic = None):
+              w_ic = None, zero_q = False):
         # q_a between 0.0 and 1.0 
         # q_pa between 0.2 and 0.99 
         # q_pb between 1.0 and 
@@ -170,18 +176,23 @@ class Model():
             solve(a == L, u_N_ic)
 
             q_N_ic = Function(self.var_N_FS, name='q_N_ic')
-            # a = inner(test, trial)*self.ds(1)
-            # L = inner(test, u_N_ic*h_ic)*self.ds(1)             
-            # solve(a == L, q_N_ic)
 
-            trial = TrialFunction(self.q_FS)
-            test = TestFunction(self.q_FS)
+            q_N_ic = Function(self.var_N_FS, name='q_N_ic')
             q_ic = Function(self.q_FS, name='q_ic')
-            # a = inner(test, trial)*dx
-            # q_b = Constant(1.0) - q_a  
-            # f = (1.0 - (q_a*cos(((self.X/self.L)**q_pa)*np.pi) + q_b*cos(((self.X/self.L)**q_pb)*np.pi)))/2.0
-            # L = inner(test, f*q_N_ic)*dx             
-            # solve(a == L, q_ic)
+
+            # cosine initial condition for u
+            if not zero_q:
+                a = inner(test, trial)*self.ds(1)
+                L = inner(test, u_N_ic*h_ic)*self.ds(1)             
+                solve(a == L, q_N_ic)
+
+                trial = TrialFunction(self.q_FS)
+                test = TestFunction(self.q_FS)
+                a = inner(test, trial)*dx
+                q_b = Constant(1.0) - q_a  
+                f = (1.0 - (q_a*cos(((self.X/self.L)**q_pa)*np.pi) + q_b*cos(((self.X/self.L)**q_pb)*np.pi)))/2.0
+                L = inner(test, f*q_N_ic)*dx             
+                solve(a == L, q_ic)
 
             self.w_ic = [
                 q_ic, 
@@ -191,12 +202,6 @@ class Model():
                 Constant(0.5), #self.x_N_), 
                 u_N_ic
                 ]
-
-            # for exp in self.w_ic:
-            #     try:
-            #         print exp.vector().array()
-            #     except:
-            #         print exp((0,0))
             
         else:
             self.w_ic = w_ic
@@ -210,8 +215,14 @@ class Model():
         
         # initialise plotting
         if self.plot:
-            self.plotter = sw_io.Plotter(self, rescale=True)
+            self.plotter = sw_io.Plotter(self, rescale=True, file=self.save_loc)
             self.plot_t = self.plot
+
+        # write ic's
+        if self.write:
+            sw_io.clear_model_files(file=self.save_loc)
+            sw_io.write_model_to_files(self, 'a', file=self.save_loc)
+            self.write_t = self.write
 
     def generate_form(self):
 
@@ -265,6 +276,7 @@ class Model():
         h_td = time_discretise(h)
         h_td_p = smooth_pos(time_discretise(h))
         phi_td = time_discretise(phi)
+        phi_td_p = smooth_pos(phi_td)
         phi_d_td = time_discretise(phi_d)
         x_N_td = time_discretise(x_N)
         inv_x_N = 1./x_N_td
@@ -303,7 +315,7 @@ class Model():
         F_q += transForm(q_td, self.q_tf, 0, "CG", Constant(0.0), self.ds(1), u_N_td*h_td)
         # stabilisation
         u = q_td/h_td
-        alpha = self.q_b*self.dX*(smooth_abs(u)+u+(phi_td*h_td)**0.5)*h_td
+        alpha = self.q_b*self.dX*(smooth_abs(u)+u+(phi_td_p*h_td_p)**0.5)*h_td
         F_q += self.k*grad(self.q_tf)[0]*alpha*grad(u)[0]*dx - \
             self.k*self.q_tf*alpha*grad(u)[0]*self.n*self.ds(1)  
         if self.mms:
@@ -387,18 +399,20 @@ class Model():
 
             self.t += self.timestep
 
-            # plot(self.w[0][1], interactive = False, rescale = True)
-
             # display results
             if self.plot:
                 if self.t > self.plot_t:
                     self.plotter.update_plot(self)
                     self.plot_t += self.plot
-            sw_io.print_timestep_info(self, delta)
 
-            # q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(self)
-            # import IPython
-            # IPython.embed()
+            # save data
+            if self.write:
+                if self.t > self.write_t:
+                    sw_io.write_model_to_files(self, 'a', file=self.save_loc)
+                    self.write_t += self.write
+
+            # write timestep info
+            sw_io.print_timestep_info(self, delta)
 
         print "\n* * * Initial forward run finished: time taken = {}".format(toc())
         list_timings(True)
@@ -429,19 +443,40 @@ if __name__ == '__main__':
     parser.add_option('-P', '--plot-freq',
                       dest='plot_freq', type=float, default=0.00001,
                       help='provide time between plots')
+    parser.add_option('-w', '--write',
+                      dest='write', action='store_true', default=False,
+                      help='write results to json file')
+    parser.add_option('-W', '--write_freq',
+                      dest='write_freq', type=float, default=0.00001,
+                      help='time between writing data')
     parser.add_option('-s', '--show_plot',
                       dest='show_plot', action='store_true', default=False,
                       help='show plots')
     parser.add_option('-S', '--save_plot',
                       dest='save_plot', action='store_true', default=False,
                       help='save plots')
+    parser.add_option('-l', '--save_loc',
+                      dest='save_loc', type=str, default='results/default',
+                      help='save plots')
+    parser.add_option('-A', '--adapt_timestep',
+                      dest='adapt_timestep', action='store_true', default=False,
+                      help='adaptive timestep')
     (options, args) = parser.parse_args()
     
     model = Model()
+
+    model.save_loc = options.save_loc
+
     if options.plot:
         model.plot = options.plot_freq
     model.save_plot = options.save_plot
     model.show_plot = options.show_plot
+
+    if options.write:
+        model.write = options.write_freq
+
+    model.adapt_timestep = options.adapt_timestep
+
     model.initialise_function_spaces()
 
     # Adjoint 
@@ -716,7 +751,7 @@ if __name__ == '__main__':
         # phi_ic = sw_io.create_function_from_file('phi_ic_adj1_latest.json'.
         #                                          format(options.adjoint), model.phi_FS)
 
-        model.setup()#phi_ic = phi_ic) #, h_ic = h_ic)
+        model.setup(zero_q = True)#phi_ic = phi_ic) #, h_ic = h_ic)
 
         q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model)
         sw_io.write_array_to_file('phi_ic.json', phi_ic.vector().array(), 'w')

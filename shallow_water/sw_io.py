@@ -5,19 +5,15 @@ import json
 
 class Plotter():
 
-    def __init__(self, model, rescale):
+    def __init__(self, model, rescale, file):
 
         self.rescale = rescale
+        self.save_loc = file
 
         if model.show_plot:
             plt.ion()
         
-        q, h, phi, phi_d, x_N, u_N = map_to_arrays(model)        
-
-        if len(q) > len(h):
-            indices = np.array([[i, i+2] for i in range(0, len(q), 2)]).flatten()
-            q_p1 = [q[i] for i in range(0, len(q), 2)]
-            q = q_p1
+        q, h, phi, phi_d, x_N, u_N = map_to_arrays(model)     
 
         self.h_y_lim = np.array(h).max()*1.1
         self.u_y_lim = np.array(q).max()*1.1
@@ -35,11 +31,6 @@ class Plotter():
     def update_plot(self, model):
 
         q, h, phi, phi_d, x_N, u_N = map_to_arrays(model)   
-
-        if len(q) > len(h):
-            indices = np.array([[i, i+2] for i in range(0, len(q), 2)]).flatten()
-            q_p1 = [q[i] for i in range(0, len(q), 2)]
-            q = q_p1
 
         x = np.linspace(0.0, x_N[0], 10001)
         
@@ -81,7 +72,7 @@ class Plotter():
         if model.show_plot:
             self.fig.canvas.draw()
         if model.save_plot:
-            self.fig.savefig('results/{:06.3f}.png'.format(model.t))  
+            self.fig.savefig(self.save_loc + '_{:06.3f}.png'.format(model.t))  
 
     def y_data(self, model, u, x_n, x, norm = None):
 
@@ -106,6 +97,33 @@ class Plotter():
     def clean_up(self):
         plt.close()
 
+def clear_model_files(file):
+
+    files = [file + '_q.json',
+             file + '_h.json',
+             file + '_phi.json',
+             file + '_phi_d.json',
+             file + '_x_N.json',
+             file + '_u_N.json',
+             file + '_T.json']
+
+    for file in files:
+        f = open(file, 'w')
+        f.write('')
+        f.close()
+
+def write_model_to_files(model, method, file):
+
+    q, h, phi, phi_d, x_N, u_N = map_to_arrays(model) 
+
+    write_array_to_file(file + '_q.json', q, method)
+    write_array_to_file(file + '_h.json', h, method)
+    write_array_to_file(file + '_phi.json', phi, method)
+    write_array_to_file(file + '_phi_d.json', phi_d, method)
+    write_array_to_file(file + '_x_N.json', x_N, method)
+    write_array_to_file(file + '_u_N.json', u_N, method)
+    write_array_to_file(file + '_T.json', [model.t], method)
+
 def print_timestep_info(model, delta):
     
     q, h, phi, phi_d, x_N, u_N = map_to_arrays(model)
@@ -124,6 +142,16 @@ def map_to_arrays(model):
     phi_d = np.array([model.w[0].vector().array()[i] for i in model.map_dict[3]])
     x_N = np.array([model.w[0].vector().array()[i] for i in model.map_dict[4]])
     u_N = np.array([model.w[0].vector().array()[i] for i in model.map_dict[5]])
+
+    if len(q) > len(h):
+        indices = np.array([[i, i+2] for i in range(0, len(q), 2)]).flatten()
+        q_p1 = [q[i] for i in range(0, len(q), 2)]
+        q = np.array(q_p1)
+
+    if len(phi) > len(h):
+        indices = np.array([[i, i+2] for i in range(0, len(phi), 2)]).flatten()
+        phi_p1 = [phi[i] for i in range(0, len(phi), 2)]
+        phi = np.array(phi_p1)
     
     return q, h, phi, phi_d, x_N, u_N
 
