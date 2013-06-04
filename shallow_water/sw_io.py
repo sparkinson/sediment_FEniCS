@@ -5,7 +5,9 @@ import json
 
 class Plotter():
 
-    def __init__(self, model):
+    def __init__(self, model, rescale):
+
+        self.rescale = rescale
 
         if model.show_plot:
             plt.ion()
@@ -46,12 +48,22 @@ class Plotter():
         self.phi_plot.clear()
         self.phi_d_plot.clear()
 
-        self.q_line, = self.q_plot.plot(x, self.y_data(model, q, x_N[0], x), 'r-')
-        self.h_line, = self.h_plot.plot(x, self.y_data(model, h, x_N[0], x), 'r-')
-        self.phi_line, = self.phi_plot.plot(x, self.y_data(model, phi, x_N[0], x), 'r-')
-        self.phi_d_line, = self.phi_d_plot.plot(x, self.y_data(model, phi_d, x_N[0], x), 'r-')
+        u_int = self.y_data(model, q, x_N[0], x, h)
+        h_int = self.y_data(model, h, x_N[0], x)
+        phi_int = self.y_data(model, phi, x_N[0], x, h)
+        phi_d_int = self.y_data(model, phi_d, x_N[0], x)
 
-        phi_d_y_lim = max(phi_d.max()*1.10, 1e-10)
+        self.q_line, = self.q_plot.plot(x, u_int, 'r-')
+        self.h_line, = self.h_plot.plot(x, h_int, 'r-')
+        self.phi_line, = self.phi_plot.plot(x, phi_int, 'r-')
+        self.phi_d_line, = self.phi_d_plot.plot(x, phi_d_int, 'r-')
+
+        if self.rescale:
+            self.h_y_lim = h_int.max()*1.1
+            self.u_y_lim = u_int.max()*1.1
+            self.phi_y_lim = phi_int.max()*1.10
+
+        phi_d_y_lim = max(phi_d_int.max()*1.10, 1e-10)
         x_lim = x_N[0]
         self.q_plot.set_autoscaley_on(False)
         self.q_plot.set_xlim([0.0,x_lim])
@@ -71,7 +83,7 @@ class Plotter():
         if model.save_plot:
             self.fig.savefig('results/{:06.3f}.png'.format(model.t))  
 
-    def y_data(self, model, u, x_n, x):
+    def y_data(self, model, u, x_n, x, norm = None):
 
         val_x = np.linspace(0.0, x_n, model.L_/model.dX_ + 1)
 
@@ -83,7 +95,13 @@ class Plotter():
                 val_x.append(val_x_)
             val_x.append(v[-1])
 
-        return np.interp(x, val_x, u) 
+        u_int = np.interp(x, val_x, u)
+        
+        if norm != None:
+            norm_int = self.y_data(model, norm, x_n, x)
+            u_int = u_int/norm_int
+
+        return u_int
 
     def clean_up(self):
         plt.close()

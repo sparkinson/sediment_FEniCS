@@ -34,23 +34,24 @@ class Model():
     # SIMULAITON USER DEFINED PARAMETERS
 
     # mesh
-    dX_ = 2.5e-2
+    dX_ = 1.0e-2
     L_ = 1.0
 
     # current properties
-    c_0 = 0.00349
-    rho_R_ = 1.717
-    h_0 = 0.4
-    x_N_ = 0.8
+    # c_0 = 0.00349
+    # rho_R_ = 1.717
+    h_0 = 1.0
+    # x_N_ = 0.8
     Fr_ = 1.19
-    g_ = 9.81
-    u_sink_ = 1e-3
+    # g_ = 9.81
+    # u_sink_ = 1e-3
+    beta_ = 5e-3
 
     # time stepping
     t = 0.0
-    timestep = 5e-1
-    adapt_timestep = False
-    cfl = Constant(0.5)
+    timestep = dX_/50.0 #5e-3
+    adapt_timestep = True
+    cfl = Constant(0.05)
 
     # mms test (default False)
     mms = False
@@ -62,10 +63,10 @@ class Model():
     eps = 1e-12
 
     # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
-    q_b = Constant(0.1)
-    h_b = Constant(0.1)
-    phi_b = Constant(0.1)
-    phi_d_b = Constant(0.1)
+    q_b = Constant(0.2)
+    h_b = Constant(0.0)
+    phi_b = Constant(0.0)
+    phi_d_b = Constant(0.0)
 
     # discretisation
     q_degree = 2
@@ -117,7 +118,7 @@ class Model():
                 self.map_dict[i] = [self.W.sub(i).dofmap().cell_dofs(j) for j in range(len(self.mesh.cells()))]
                 self.map_dict[i] = list(np.array(self.map_dict[i]).flatten())
             else:   # R
-                self.map_dict[i] = self.W.sub(i).dofmap().cell_dofs(0)              
+                self.map_dict[i] = self.W.sub(i).dofmap().cell_dofs(0)    
 
         # define test functions
         (self.q_tf, self.h_tf, self.phi_tf, self.phi_d_tf, self.x_N_tf, self.u_N_tf) = TestFunctions(self.W)
@@ -140,21 +141,23 @@ class Model():
         self.t = 0.0
 
         # define constants
-        self.g = Constant(self.g_, name="g")
-        self.rho_R = Constant(self.rho_R_, name="rho_R")
+        # self.g = Constant(self.g_, name="g")
+        # self.rho_R = Constant(self.rho_R_, name="rho_R")
         self.Fr = Constant(self.Fr_, name="Fr")
-        self.u_sink = Constant(self.u_sink_, name="u_sink")
+        # self.u_sink = Constant(self.u_sink_, name="u_sink")
+        self.beta = Constant(self.beta_, name="beta")
 
         if type(w_ic) == type(None):
             # define initial conditions
             if type(h_ic) == type(None):
-                h_ic = Constant(self.h_0)
-                h_N = self.h_0
+                h_ic = 1.0 #Constant(self.h_0)
+                h_N = 1.0 #self.h_0
             else:
                 h_N = h_ic.vector().array()[-1]
             if type(phi_ic) == type(None): 
-                phi_ic = Constant(self.c_0*self.rho_R_*self.g_*self.h_0)
-                phi_N = self.c_0*self.rho_R_*self.g_*self.h_0
+                # phi_ic = Constant(self.c_0*self.rho_R_*self.g_*self.h_0)
+                phi_ic = 1.0 #Constant(self.c_0*self.h_0)
+                phi_N = 1.0 #self.c_0*self.rho_R_*self.g_*self.h_0
             else:
                 phi_N = phi_ic.vector().array()[-1]
 
@@ -167,25 +170,25 @@ class Model():
             solve(a == L, u_N_ic)
 
             q_N_ic = Function(self.var_N_FS, name='q_N_ic')
-            a = inner(test, trial)*self.ds(1)
-            L = inner(test, u_N_ic*h_ic)*self.ds(1)             
-            solve(a == L, q_N_ic)
+            # a = inner(test, trial)*self.ds(1)
+            # L = inner(test, u_N_ic*h_ic)*self.ds(1)             
+            # solve(a == L, q_N_ic)
 
             trial = TrialFunction(self.q_FS)
             test = TestFunction(self.q_FS)
             q_ic = Function(self.q_FS, name='q_ic')
-            a = inner(test, trial)*dx
-            q_b = Constant(1.0) - q_a  
-            f = (1.0 - (q_a*cos(((self.X/self.L)**q_pa)*np.pi) + q_b*cos(((self.X/self.L)**q_pb)*np.pi)))/2.0
-            L = inner(test, f*q_N_ic)*dx             
-            solve(a == L, q_ic)
+            # a = inner(test, trial)*dx
+            # q_b = Constant(1.0) - q_a  
+            # f = (1.0 - (q_a*cos(((self.X/self.L)**q_pa)*np.pi) + q_b*cos(((self.X/self.L)**q_pb)*np.pi)))/2.0
+            # L = inner(test, f*q_N_ic)*dx             
+            # solve(a == L, q_ic)
 
             self.w_ic = [
                 q_ic, 
                 h_ic, 
                 phi_ic, 
                 Function(self.phi_d_FS, name='phi_d_ic'), 
-                Constant(self.x_N_), 
+                Constant(0.5), #self.x_N_), 
                 u_N_ic
                 ]
 
@@ -207,7 +210,7 @@ class Model():
         
         # initialise plotting
         if self.plot:
-            self.plotter = sw_io.Plotter(self)
+            self.plotter = sw_io.Plotter(self, rescale=True)
             self.plot_t = self.plot
 
     def generate_form(self):
@@ -248,7 +251,8 @@ class Model():
 
         # define adaptive timestep form
         if self.adapt_timestep:
-            self.k = Function(self.var_N_FS, name="k")
+            # self.k = Function(self.var_N_FS, name="k")
+            self.k = project(Expression(str(self.timestep)), model.var_N_FS)
             self.k_tf = TestFunction(self.var_N_FS)
             self.k_trf = TrialFunction(self.var_N_FS)
             self.a_k = self.k_tf*self.k_trf*dx 
@@ -315,14 +319,15 @@ class Model():
         # mass volume per unit width of sediment = g'(phi)*h = R*g*c*h
         F_phi = x_N_td*self.phi_tf*(phi[0] - phi[1])*dx + \
             self.phi_tf*grad(q_td*phi_td/h_td)[0]*self.k*dx + \
-            x_N_td*self.phi_tf*self.u_sink*phi_td/h_td*self.k*dx
+            x_N_td*self.phi_tf*self.beta*phi_td/h_td*self.k*dx
         F_phi += transForm(phi_td, self.phi_tf, 2, "CG", self.phi_b, self.ds(0) + self.ds(1))
         if self.mms:
             F_phi += x_N_td*self.phi_tf*self.s_phi*self.k*dx
 
         # deposit = c
         F_phi_d = x_N_td*self.phi_d_tf*(phi_d[0] - phi_d[1])*dx - \
-            x_N_td*self.phi_d_tf*self.u_sink*phi_td/(self.rho_R*self.g*h_td)*self.k*dx 
+            x_N_td*self.phi_d_tf*self.beta*phi_td/h_td*self.k*dx 
+            # x_N_td*self.phi_d_tf*self.beta*phi_td/(self.rho_R*self.g*h_td)*self.k*dx 
         F_phi_d += transForm(phi_d_td, self.phi_d_tf, 3, self.phi_d_disc, self.phi_d_b, self.ds(0))
         if self.mms:
             F_phi_d += x_N_td*self.phi_d_tf*self.s_phi_d*self.k*dx
@@ -334,6 +339,8 @@ class Model():
             F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*u_N_td*self.k*dx 
         F_u_N = self.u_N_tf*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
             self.u_N_tf*u_N[0]*self.ds(1)
+        # F_u_N = self.u_N_tf*(0.5*h_td**-0.5*(phi_td)**0.5)*self.ds(1) - \
+        #     self.u_N_tf*u_N[0]*self.ds(1)
 
         # combine PDE's
         self.F = F_q + F_h + F_phi + F_phi_d + F_x_N + F_u_N
@@ -362,9 +369,9 @@ class Model():
         while not (time_finish(self.t) or converged(delta)):
             
             # ADAPTIVE TIMESTEP
-            # if self.adapt_timestep:
-            #     solve(self.a_k == self.L_k, self.k)
-            #     self.timestep = self.k.vector().array()[0]
+            if self.adapt_timestep and self.t > 0.0:
+                solve(self.a_k == self.L_k, self.k)
+                self.timestep = self.k.vector().array()[0]
             
             # SOLVE COUPLED EQUATIONS
             # solve(self.F == 0, self.w[0], bcs=self.bc, solver_parameters=solver_parameters)
@@ -709,7 +716,7 @@ if __name__ == '__main__':
         # phi_ic = sw_io.create_function_from_file('phi_ic_adj1_latest.json'.
         #                                          format(options.adjoint), model.phi_FS)
 
-        model.setup(phi_ic = phi_ic) #, h_ic = h_ic)
+        model.setup()#phi_ic = phi_ic) #, h_ic = h_ic)
 
         q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model)
         sw_io.write_array_to_file('phi_ic.json', phi_ic.vector().array(), 'w')
