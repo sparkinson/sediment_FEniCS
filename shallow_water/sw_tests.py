@@ -15,15 +15,11 @@ class MMS_Model(sw.Model):
         # define constants
         self.dX_ = dX
         self.L_ = np.pi
-        self.g_ = 1.0
-        self.g = Constant(1.0)
-        self.rho_R_ = 1.0
-        self.rho_R = Constant(1.0)
         self.q_b = Constant(1e-1 / dX)
         self.Fr_ = 1.0
         self.Fr = Constant(1.0)
-        self.u_sink_ = 1.0
-        self.u_sink = Constant(1.0)
+        self.beta_ = 1.0
+        self.beta = Constant(1.0)
 
         self.h_b = Constant(0.0)
         self.phi_b = Constant(0.0)
@@ -148,7 +144,7 @@ def taylor_tester(plot, show, save):
 
     model.dX = 5e-2
     model.timestep = 1e-2
-    # model.adapt_timestep = False
+    model.adapt_timestep = False
     model.plot = plot
     model.show_plot = show
     model.save_plot = save

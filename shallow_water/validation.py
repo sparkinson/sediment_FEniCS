@@ -36,7 +36,7 @@ for i in indices:
     x = [j*dx for j in range(len(H[i]))]
     sim_data.append(array(zip(x, H[i])))
 
-for i in range(0,len(sim_data) - 1):
+for i in range(0,len(sim_data)):
     plot(data[i][:,0],data[i][:,1],'r-')
     plot(sim_data[i][:,0],sim_data[i][:,1],'b-')
 show()
