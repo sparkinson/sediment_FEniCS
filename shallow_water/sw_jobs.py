@@ -162,6 +162,8 @@ else:
     adjoint_setup(model)
     model.initialise_function_spaces()
 
+    plotter = sw_io.Adjoint_Plotter('results/adj_{}_'.format(job), True)
+
     if job == 2:
 
         if options.adjoint_test:
@@ -358,6 +360,8 @@ else:
             j_log.append(j)
             sw_io.write_array_to_file('j_log{}.json'.format(job), j_log, 'w')
 
+            plotter.update_plot(phi_ic, j)
+
             print "* * * J = {}".format(j)
 
             tic()
@@ -384,7 +388,7 @@ else:
                   [1.5]]
 
         for i in range(15):
-            reg_scale.assign(reg_scale_base*2**(0-i))
+            reg_scale.assign(reg_scale_base*2**(0-4*i))
 
             adj_html("forward.html", "forward")
             adj_html("adjoint.html", "adjoint")
@@ -392,7 +396,7 @@ else:
             
             # SLSQP L-BFGS-B Newton-CG
             m_opt = minimize(reduced_functional, method = "L-BFGS-B", 
-                             options = {'maxiter': 5,
+                             options = {'maxiter': 1,
                                         'disp': True, 'gtol': 1e-20, 'ftol': 1e-20}, 
                              bounds = bounds) 
 

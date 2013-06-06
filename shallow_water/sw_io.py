@@ -109,101 +109,46 @@ class Plotter():
 
 class Adjoint_Plotter():
 
-    def __init__(self, file):
+    def __init__(self, file, show):
 
         self.save_loc = file
+        self.show = show
 
-        if model.show_plot:
+        if self.show:
             plt.ion()
 
-        self.h_y_lim = np.array(h).max()*1.1
-        self.u_y_lim = np.array(q).max()*1.1
-        self.phi_y_lim = phi.max()*1.10
+        f = open('phi_ic.json','r')
+        self.target_phi = np.array(json.loads(f.readline()))
+        self.j = []
         
-        x = np.linspace(0.0, x_N[0], 10001)
         self.fig = plt.figure(figsize=(16, 12))#, dpi=100)
-        self.q_plot = self.fig.add_subplot(411)
-        self.h_plot = self.fig.add_subplot(412)
-        self.phi_plot = self.fig.add_subplot(413)
-        self.phi_d_plot = self.fig.add_subplot(414)
+        self.phi_plot = self.fig.add_subplot(211)
+        self.j_plot = self.fig.add_subplot(212)
 
-        self.title = self.fig.text(0.05,0.935,'variables at t={}'.format(model.t))
+    def update_plot(self, phi_ic, j):  
         
-        self.update_plot(model) 
-
-    def update_plot(self, model):
-
-        q, h, phi, phi_d, x_N, u_N = map_to_arrays(model)   
-
-        x = np.linspace(0.0, x_N[0], 10001)
-
-        self.title.set_text(timestep_info_string(model))#('variables at t={}'.format(model.t))
-        
-        self.q_plot.clear()
-        self.h_plot.clear()
         self.phi_plot.clear()
-        self.phi_d_plot.clear()
+        self.j_plot.clear()
 
-        self.phi_d_plot.set_xlabel('x')
-        self.q_plot.set_ylabel('u')
-        self.h_plot.set_ylabel('h')
+        self.phi_plot.set_xlabel('x')
         self.phi_plot.set_ylabel('phi')
-        self.phi_d_plot.set_ylabel('phi_d')
+        self.j_plot.set_xlabel('iterations')
+        self.j_plot.set_ylabel('J')
+        self.j_plot.set_yscale('log')
 
-        u_int = self.y_data(model, q, x_N[0], x, h)
-        h_int = self.y_data(model, h, x_N[0], x)
-        phi_int = self.y_data(model, phi, x_N[0], x, h)
-        phi_d_int = self.y_data(model, phi_d, x_N[0], x)
+        self.target_phi_line, = self.phi_plot.plot(np.linspace(0,1.0,len(self.target_phi)), self.target_phi, 'r-')
+        self.phi_line, = self.phi_plot.plot(np.linspace(0,1.0,len(phi_ic)), phi_ic, 'b-')
 
-        self.q_line, = self.q_plot.plot(x, u_int, 'r-')
-        self.h_line, = self.h_plot.plot(x, h_int, 'r-')
-        self.phi_line, = self.phi_plot.plot(x, phi_int, 'r-')
-        self.phi_d_line, = self.phi_d_plot.plot(x, phi_d_int, 'r-')
+        self.j.append(j)
+        self.j_line, = self.j_plot.plot(self.j, 'r-')
 
-        if self.rescale:
-            self.h_y_lim = h_int.max()*1.1
-            self.u_y_lim = u_int.max()*1.1
-            self.phi_y_lim = phi_int.max()*1.10
-
-        phi_d_y_lim = max(phi_d_int.max()*1.10, 1e-10)
-        x_lim = x_N[0]
-        self.q_plot.set_autoscaley_on(False)
-        self.q_plot.set_xlim([0.0,x_lim])
-        self.q_plot.set_ylim([0.0,self.u_y_lim])
-        self.h_plot.set_autoscaley_on(False)
-        self.h_plot.set_xlim([0.0,x_lim])
-        self.h_plot.set_ylim([0.0,self.h_y_lim])
-        self.phi_plot.set_autoscaley_on(False)
-        self.phi_plot.set_xlim([0.0,x_lim])
-        self.phi_plot.set_ylim([0.0,self.phi_y_lim])
-        self.phi_d_plot.set_autoscaley_on(False)
-        self.phi_d_plot.set_xlim([0.0,x_lim])
-        self.phi_d_plot.set_ylim([0.0,phi_d_y_lim])
+        self.phi_plot.set_autoscaley_on(True)
+        self.j_plot.set_autoscaley_on(True)
         
-        if model.show_plot:
+        if self.show:
             self.fig.canvas.draw()
-        if model.save_plot:
-            self.fig.savefig(self.save_loc + '_{:06.3f}.png'.format(model.t))  
-
-    def y_data(self, model, u, x_n, x, norm = None):
-
-        val_x = np.linspace(0.0, x_n, model.L_/model.dX_ + 1)
-
-        if len(u) > len(val_x):
-            v = val_x
-            val_x = [v[0]]
-            for val_x_ in v[1:-1]:
-                val_x.append(val_x_)
-                val_x.append(val_x_)
-            val_x.append(v[-1])
-
-        u_int = np.interp(x, val_x, u)
-        
-        if norm != None:
-            norm_int = self.y_data(model, norm, x_n, x)
-            u_int = u_int/norm_int
-
-        return u_int
+        # if model.save_plot:
+        #     self.fig.savefig(self.save_loc + '_{:06.3f}.png'.format(model.t)) 
 
     def clean_up(self):
         plt.close()

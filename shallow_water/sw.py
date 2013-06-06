@@ -53,7 +53,7 @@ class Model():
     mms = False
 
     # display plot
-    plot = 0.0000001
+    plot = None
     show_plot = True
     save_plot = False
 
@@ -416,6 +416,7 @@ class Model():
 if __name__ == '__main__':
 
     model = Model()    
+    model.plot = 0.0000001
     model.initialise_function_spaces()
     model.setup(zero_q = True)     
     model.solve(5.0) 
