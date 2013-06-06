@@ -148,12 +148,12 @@ elif job == 1:
 
     model.setup(phi_ic = phi_ic) 
 
-    q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model)
+    q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
     sw_io.write_array_to_file('phi_ic.json', phi_ic.vector().array(), 'w')
 
     model.solve(T = options.T)
 
-    q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model)
+    q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
     sw_io.write_array_to_file('deposit_data.json', phi_d, 'w')
     sw_io.write_array_to_file('runout_data.json', x_N, 'w')
 
@@ -162,7 +162,12 @@ else:
     adjoint_setup(model)
     model.initialise_function_spaces()
 
-    plotter = sw_io.Adjoint_Plotter('results/adj_{}_'.format(job), True)
+    if job == 2:
+        target = True
+    else:
+        target = False
+
+    plotter = sw_io.Adjoint_Plotter('results/adj_{}_'.format(job), True, target=target)
 
     if job == 2:
 
@@ -208,7 +213,7 @@ else:
         model.phi_b.assign(0.2)
         model.phi_d_b.assign(0.1)
 
-        phi_ic_0 = project(Expression('0.005'), model.phi_FS)
+        phi_ic_0 = project(Expression('1.0'), model.phi_FS)
         if options.adjoint_test:
             # h_ic = sw_io.create_function_from_file('h_ic_adj{}_latest.json'.
             #                                         format(options.adjoint), model.h_FS)
@@ -233,10 +238,10 @@ else:
         inv_x_N = 1.0/x_N
         filter_val = 1.0-exp(1e1*(model.X*model.x_N_/x_N - 1.0))
         filter = (filter_val + abs(filter_val))/2.0
-        pos_grads_on = (grad(phi_d) + abs(grad(phi_d)))/(2*grad(phi_d))
-        neg_grads_on = (grad(phi_d) - abs(grad(phi_d)))/(2*grad(phi_d))
-        pos_f = pos_grads_on*(1.0 - exp(-1e5*grad(phi_d)))
-        neg_f = neg_grads_on*(exp(1e5*grad(phi_d)) - 1.0)/(x_N-model.L)
+        pos_grads_on = (grad(phi_d)[0] + abs(grad(phi_d)[0]))/(2*grad(phi_d)[0])
+        neg_grads_on = (grad(phi_d)[0] - abs(grad(phi_d)[0]))/(2*grad(phi_d)[0])
+        pos_f = pos_grads_on*(1.0 - exp(-1e4*grad(phi_d)[0]))
+        neg_f = neg_grads_on*(exp(1e4*grad(phi_d)[0]) - 1.0)/(x_N-model.L)
         int = (1.0 - filter)*(pos_f + neg_f)*int_scale
         int_scale.assign(1e-2/abs(assemble(int*dx)))
 
@@ -258,14 +263,14 @@ else:
         int_reg = (inner(grad(phi),grad(phi))**reg_power*reg_scale + 
                    inner(grad(h),grad(h))**reg_power*reg_scale)
 
-        scaling = Constant(1e-1)  
+        scaling = Constant(1e-1) 
         J = Functional(scaling*int*dx*dt[FINISH_TIME] + scaling*int_reg*dx*dt[START_TIME])
 
-        print int_scale((0,0))
-        q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model)
-        sw_io.write_array_to_file('deposit_data.json', phi_d, 'w')
-        sw_io.write_array_to_file('runout_data.json', x_N, 'w')
-        sys.exit()
+        # print int_scale((0,0))
+        # q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
+        # sw_io.write_array_to_file('deposit_data.json', phi_d, 'w')
+        # sw_io.write_array_to_file('runout_data.json', x_N, 'w')
+        # sys.exit()
 
     else:
 
@@ -286,7 +291,7 @@ else:
         solve(a == L_g, g)            
         solve(a == L_reg, reg)
 
-        q_, h_, phi_, phi_d_, x_N_, u_N_ = sw_io.map_to_arrays(model)
+        q_, h_, phi_, phi_d_, x_N_, u_N_ = sw_io.map_to_arrays(model.w[0], model.map_dict) 
 
         import matplotlib.pyplot as plt
 
@@ -360,7 +365,14 @@ else:
             j_log.append(j)
             sw_io.write_array_to_file('j_log{}.json'.format(job), j_log, 'w')
 
-            plotter.update_plot(phi_ic, j)
+            (fwd_var, output) = adjointer.get_forward_solution(adjointer.equation_count - 1)
+            var = adjointer.get_variable_value(fwd_var)
+            q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(var.data, model.map_dict)
+
+            # from IPython import embed; embed()      
+            
+
+            plotter.update_plot(phi_ic, phi_d, j)
 
             print "* * * J = {}".format(j)
 

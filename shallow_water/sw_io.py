@@ -13,7 +13,7 @@ class Plotter():
         if model.show_plot:
             plt.ion()
         
-        q, h, phi, phi_d, x_N, u_N = map_to_arrays(model)     
+        q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.map_dict)     
 
         self.h_y_lim = np.array(h).max()*1.1
         self.u_y_lim = np.array(q).max()*1.1
@@ -32,7 +32,7 @@ class Plotter():
 
     def update_plot(self, model):
 
-        q, h, phi, phi_d, x_N, u_N = map_to_arrays(model)   
+        q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.map_dict)  
 
         x = np.linspace(0.0, x_N[0], 10001)
 
@@ -109,40 +109,55 @@ class Plotter():
 
 class Adjoint_Plotter():
 
-    def __init__(self, file, show):
+    def __init__(self, file, show, target):
 
         self.save_loc = file
         self.show = show
+        self.target = target
 
         if self.show:
             plt.ion()
 
-        f = open('phi_ic.json','r')
-        self.target_phi = np.array(json.loads(f.readline()))
+        if self.target:
+            f = open('phi_ic.json','r')
+            self.target_phi = np.array(json.loads(f.readline()))
+            f = open('deposit_data.json','r')
+            self.target_phi_d = np.array(json.loads(f.readline()))
+        
         self.j = []
         
         self.fig = plt.figure(figsize=(16, 12))#, dpi=100)
-        self.phi_plot = self.fig.add_subplot(211)
-        self.j_plot = self.fig.add_subplot(212)
+        self.phi_plot = self.fig.add_subplot(131)
+        self.phi_d_plot = self.fig.add_subplot(132)
+        self.j_plot = self.fig.add_subplot(133)
 
-    def update_plot(self, phi_ic, j):  
+    def update_plot(self, phi_ic, phi_d, j):  
         
         self.phi_plot.clear()
+        self.phi_d_plot.clear()
         self.j_plot.clear()
 
         self.phi_plot.set_xlabel('x')
-        self.phi_plot.set_ylabel('phi')
+        self.phi_plot.set_ylabel('phi (START)')
+        self.phi_d_plot.set_xlabel('x')
+        self.phi_d_plot.set_ylabel('phi_d (END)')
         self.j_plot.set_xlabel('iterations')
         self.j_plot.set_ylabel('J')
-        self.j_plot.set_yscale('log')
 
-        self.target_phi_line, = self.phi_plot.plot(np.linspace(0,1.0,len(self.target_phi)), self.target_phi, 'r-')
+        if self.target:
+            self.target_phi_line, = self.phi_plot.plot(np.linspace(0,1.0,len(self.target_phi)), self.target_phi, 'r-')
+            self.target_phi_d_line, = self.phi_d_plot.plot(np.linspace(0,1.0,len(self.target_phi_d)), self.target_phi_d, 'r-')
+
         self.phi_line, = self.phi_plot.plot(np.linspace(0,1.0,len(phi_ic)), phi_ic, 'b-')
+        self.phi_d_line, = self.phi_d_plot.plot(np.linspace(0,1.0,len(phi_d)), phi_d, 'b-')
 
         self.j.append(j)
+        if all(e > 0.0 for e in self.j):
+            self.j_plot.set_yscale('log')
         self.j_line, = self.j_plot.plot(self.j, 'r-')
 
         self.phi_plot.set_autoscaley_on(True)
+        self.phi_d_plot.set_autoscaley_on(True)
         self.j_plot.set_autoscaley_on(True)
         
         if self.show:
@@ -170,7 +185,7 @@ def clear_model_files(file):
 
 def write_model_to_files(model, method, file):
 
-    q, h, phi, phi_d, x_N, u_N = map_to_arrays(model) 
+    q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.map_dict)  
 
     write_array_to_file(file + '_q.json', q, method)
     write_array_to_file(file + '_h.json', h, method)
@@ -186,7 +201,7 @@ def print_timestep_info(model, delta):
 
 def timestep_info_string(model):
     
-    q, h, phi, phi_d, x_N, u_N = map_to_arrays(model)
+    q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.map_dict) 
         
     mass = (h[:model.L_/model.dX_ + 1]*(x_N[0]*model.dX_)).sum()
 
@@ -194,14 +209,14 @@ def timestep_info_string(model):
             "x_N = {0:.2e}, u_N = {1:.2e}, u_N_2 = {2:.2e}, h_N = {3:.2e}, mass = {4:.2e}"
             .format(x_N[0], u_N[0], q[-1]/h[-1], h[-1], mass))
 
-def map_to_arrays(model):
+def map_to_arrays(w, map):
     
-    q = np.array([model.w[0].vector().array()[i] for i in model.map_dict[0]])
-    h = np.array([model.w[0].vector().array()[i] for i in model.map_dict[1]])
-    phi = np.array([model.w[0].vector().array()[i] for i in model.map_dict[2]])
-    phi_d = np.array([model.w[0].vector().array()[i] for i in model.map_dict[3]])
-    x_N = np.array([model.w[0].vector().array()[i] for i in model.map_dict[4]])
-    u_N = np.array([model.w[0].vector().array()[i] for i in model.map_dict[5]])
+    q = np.array([w.vector().array()[i] for i in map[0]])
+    h = np.array([w.vector().array()[i] for i in map[1]])
+    phi = np.array([w.vector().array()[i] for i in map[2]])
+    phi_d = np.array([w.vector().array()[i] for i in map[3]])
+    x_N = np.array([w.vector().array()[i] for i in map[4]])
+    u_N = np.array([w.vector().array()[i] for i in map[5]])
 
     if len(q) > len(h):
         indices = np.array([[i, i+2] for i in range(0, len(q), 2)]).flatten()
