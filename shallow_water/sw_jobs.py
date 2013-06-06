@@ -241,7 +241,7 @@ else:
         pos_grads_on = (grad(phi_d)[0] + abs(grad(phi_d)[0]))/(2*grad(phi_d)[0])
         neg_grads_on = (grad(phi_d)[0] - abs(grad(phi_d)[0]))/(2*grad(phi_d)[0])
         pos_f = pos_grads_on*(1.0 - exp(-1e4*grad(phi_d)[0]))
-        neg_f = neg_grads_on*(exp(1e4*grad(phi_d)[0]) - 1.0)/(x_N-model.L)
+        neg_f = neg_grads_on*(exp(1e4*grad(phi_d)[0]) - 1.0)/(x_N-model.L) 
         int = (1.0 - filter)*(pos_f + neg_f)*int_scale
         int_scale.assign(1e-2/abs(assemble(int*dx)))
 
