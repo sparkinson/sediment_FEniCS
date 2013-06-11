@@ -22,7 +22,7 @@ parser.add_option('-t', '--adjoint_test',
                   action='store_true', dest='adjoint_test', default=False,
                   help='test adjoint solution')
 parser.add_option('-T', '--end_time',
-                  dest='T', type=float, default=10.0,
+                  dest='T', type=float, default=2.0,
                   help='simulation end time')
 parser.add_option('-p', '--plot',
                   dest='plot', action='store_true', default=False,
@@ -162,32 +162,70 @@ elif job == 4:
     adjoint_setup(model)
     model.initialise_function_spaces()
 
-    phi_ic = project(Expression('1.0 - (0.8*cos(pow(x[0] +0.1,4.0)*pi))'), model.phi_FS)
+    # phi_ic = project(Expression('1.0 - (0.8*cos(pow(x[0] +0.1,4.0)*pi))'), model.phi_FS)
+    phi_ic = project(Expression('1.0'), model.phi_FS)
 
     model.setup(phi_ic = phi_ic) 
 
     q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
-    sw_io.write_array_to_file('phi_ic_2.json', phi_ic.vector().array(), 'w')
+    sw_io.write_array_to_file('phi_ic_2_init.json', phi_ic.vector().array(), 'w')
 
     model.solve(T = options.T)
 
     q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
-    sw_io.write_array_to_file('deposit_data_2.json', phi_d, 'w')
-    sw_io.write_array_to_file('runout_data_2.json', x_N, 'w')
+    sw_io.write_array_to_file('deposit_data_2_init.json', phi_d, 'w')
+    sw_io.write_array_to_file('runout_data_2_init.json', x_N, 'w')
 
 else:
 
     adjoint_setup(model)
     model.initialise_function_spaces()
 
-    if job == 2:
+    if job == 2 or job == 5:
         target = True
     else:
         target = False
 
-    # plotter = sw_io.Adjoint_Plotter('results/adj_{}_'.format(job), True, target=target)
+    plotter = sw_io.Adjoint_Plotter('results/adj_{}_'.format(job), True, target=target)
 
     if job == 2:
+
+        if options.adjoint_test:
+            phi_ic = sw_io.create_function_from_file('phi_ic_adj{}_latest.json'.
+                                                     format(job), model.phi_FS)
+        else:
+            phi_ic = project(Expression('1.0'), model.phi_FS)
+
+        model.setup(phi_ic = phi_ic)#, h_ic=h_ic)
+        model.solve(T = options.T)
+        (q, h, phi, phi_d, x_N, u_N) = split(model.w[0])
+
+        # get model data
+        phi_d_aim = sw_io.create_function_from_file('deposit_data.json', model.phi_d_FS)
+        x_N_aim = sw_io.create_function_from_file('runout_data.json', model.var_N_FS)
+
+        # form Functional integrals
+        int_0_scale = Constant(1)
+        int_1_scale = Constant(1)
+        int_0 = inner(phi_d-phi_d_aim, phi_d-phi_d_aim)*int_0_scale*dx
+        int_1 = inner(x_N-x_N_aim, x_N-x_N_aim)*int_1_scale*dx
+
+        # determine scaling
+        int_0_scale.assign(1e-5/assemble(int_0))
+        int_1_scale.assign(1e-7/assemble(int_1)) # 1e-4 t=5.0, 1e-4 t=10.0
+        ### int_0 1e-2, int_1 1e-4 - worked well for dimensionalised problem
+
+        # functional regularisation
+        reg_scale = Constant(1)
+        int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
+        reg_scale_base = 1e-4       # 1e-2 for t=10.0
+        reg_scale.assign(reg_scale_base)
+
+        # functional
+        scaling = Constant(1e-0)  # 1e0 t=5.0, 1e-1 t=10.0
+        J = Functional(scaling*(int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
+
+    if job == 5:
 
         if options.adjoint_test:
             phi_ic = sw_io.create_function_from_file('phi_ic_adj{}_latest.json'.
@@ -270,7 +308,7 @@ else:
         neg_grads_on = smooth_neg(g_phi_d)/smooth_abs(g_phi_d)
         # -1e4 for dimensionalised
         pos_f = pos_grads_on*(exp(1e0*g_phi_d) - 1.0)
-        neg_f = neg_grads_on*(exp(1e0*g_phi_d) - 1.0)/(x_N-model.x_N_)**3.0
+        neg_f = neg_grads_on*(exp(1e0*g_phi_d) - 1.0)/(x_N-model.x_N_)**2.0
         # int = (1.0 - filter)*(pos_f - neg_f)*int_scale
         int = (1.0 - filter)*(pos_f - neg_f)*int_scale
         int_scale.assign(1e0/abs(assemble(int*dx)))
@@ -331,6 +369,10 @@ else:
         # dJdq_a = compute_gradient(J, ScalarParameter(q_a), forget=False)
         # dJdq_pa = compute_gradient(J, ScalarParameter(q_a), forget=False)
         # dJdq_pb = compute_gradient(J, ScalarParameter(q_a), forget=False)
+
+        sw_io.write_array_to_file('dJdphi.json',dJdphi.vector().array(),'w')
+        sw_io.write_array_to_file('dJdh.json',dJdh.vector().array(),'w')
+
         import IPython
         IPython.embed()
 
@@ -407,7 +449,7 @@ else:
 
             # from IPython import embed; embed()  
             
-            # plotter.update_plot(phi_ic, phi_d, j)
+            plotter.update_plot(phi_ic, phi_d, j)
 
             print "* * * J = {}".format(j)
 
@@ -422,7 +464,7 @@ else:
         
     tic()
 
-    if job == 2:
+    if job == 2 or job == 5:
 
         reduced_functional = MyReducedFunctional(J, 
                                                  [InitialConditionParameter(phi_ic),

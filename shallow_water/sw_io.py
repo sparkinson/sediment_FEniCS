@@ -1,7 +1,15 @@
+from __future__ import unicode_literals
 import matplotlib.pyplot as plt
 from dolfin import *
 import numpy as np
 import json
+
+import matplotlib as mpl
+from matplotlib.ticker import ScalarFormatter, FormatStrFormatter
+
+mpl.rcParams['text.usetex']=True
+mpl.rcParams['text.latex.unicode']=True
+plt.rc('font',**{'family':'serif','serif':['cm']})
 
 class Plotter():
 
@@ -20,13 +28,13 @@ class Plotter():
         self.phi_y_lim = phi.max()*1.10
         
         x = np.linspace(0.0, x_N[0], 10001)
-        self.fig = plt.figure(figsize=(16, 12))#, dpi=100)
+        self.fig = plt.figure(figsize=(6, 4), dpi=100)
         self.q_plot = self.fig.add_subplot(411)
         self.h_plot = self.fig.add_subplot(412)
         self.phi_plot = self.fig.add_subplot(413)
         self.phi_d_plot = self.fig.add_subplot(414)
 
-        self.title = self.fig.text(0.05,0.935,'variables at t={}'.format(model.t))
+        self.title = self.fig.text(0.05,0.935,r'variables at $t={}$'.format(model.t))
         
         self.update_plot(model) 
 
@@ -36,18 +44,18 @@ class Plotter():
 
         x = np.linspace(0.0, x_N[0], 10001)
 
-        self.title.set_text(timestep_info_string(model))#('variables at t={}'.format(model.t))
+        self.title.set_text(timestep_info_string(model, True))#('variables at t={}'.format(model.t))
         
         self.q_plot.clear()
         self.h_plot.clear()
         self.phi_plot.clear()
         self.phi_d_plot.clear()
 
-        self.phi_d_plot.set_xlabel('x')
-        self.q_plot.set_ylabel('u')
-        self.h_plot.set_ylabel('h')
-        self.phi_plot.set_ylabel('phi')
-        self.phi_d_plot.set_ylabel('phi_d')
+        self.phi_d_plot.set_xlabel(r'$x$')
+        self.q_plot.set_ylabel(r'$u$')
+        self.h_plot.set_ylabel(r'$h$')
+        self.phi_plot.set_ylabel(r'$\varphi$')
+        self.phi_d_plot.set_ylabel(r'$\eta$')
 
         u_int = self.y_data(model, q, x_N[0], x, h)
         h_int = self.y_data(model, h, x_N[0], x)
@@ -126,7 +134,7 @@ class Adjoint_Plotter():
         
         self.j = []
         
-        self.fig = plt.figure(figsize=(16, 12))#, dpi=100)
+        self.fig = plt.figure(figsize=(6, 4), dpi=100)
         self.phi_plot = self.fig.add_subplot(131)
         self.phi_d_plot = self.fig.add_subplot(132)
         self.j_plot = self.fig.add_subplot(133)
@@ -137,12 +145,12 @@ class Adjoint_Plotter():
         self.phi_d_plot.clear()
         self.j_plot.clear()
 
-        self.phi_plot.set_xlabel('x')
-        self.phi_plot.set_ylabel('phi (START)')
-        self.phi_d_plot.set_xlabel('x')
-        self.phi_d_plot.set_ylabel('phi_d (END)')
-        self.j_plot.set_xlabel('iterations')
-        self.j_plot.set_ylabel('J')
+        self.phi_plot.set_xlabel(r'$x$')
+        self.phi_plot.set_ylabel(r'$\varphi$ (START)')
+        self.phi_d_plot.set_xlabel(r'$x$')
+        self.phi_d_plot.set_ylabel(r'$\eta$ (END)')
+        self.j_plot.set_xlabel(r'iterations')
+        self.j_plot.set_ylabel(r'$J$')
 
         if self.target:
             self.target_phi_line, = self.phi_plot.plot(np.linspace(0,1.0,len(self.target_phi)), self.target_phi, 'r-')
@@ -199,15 +207,20 @@ def print_timestep_info(model, delta):
     
     info_green("\nEND OF TIMESTEP " + timestep_info_string(model) + "dw = {:.2e}\n".format(delta))
 
-def timestep_info_string(model):
+def timestep_info_string(model, tex=False):
     
     q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.map_dict) 
         
     mass = (h[:model.L_/model.dX_ + 1]*(x_N[0]*model.dX_)).sum()
 
-    return ("t = {0:.2e}, dt = {1:.2e}:\n".format(model.t, model.timestep) +
-            "x_N = {0:.2e}, u_N = {1:.2e}, u_N_2 = {2:.2e}, h_N = {3:.2e}, mass = {4:.2e}"
-            .format(x_N[0], u_N[0], q[-1]/h[-1], h[-1], mass))
+    if tex:
+        return ("$t$ = {0:.2e}, $dt$ = {1:.2e}:\n".format(model.t, model.timestep) +
+                "$x_N$ = {0:.2e}, $\dot{{x}}_N$ = {1:.2e}, $h_N$ = {3:.2e}, mass = {4:.2e}"
+                .format(x_N[0], u_N[0], q[-1]/h[-1], h[-1], mass))
+    else:
+        return ("t = {0:.2e}, dt = {1:.2e}:\n".format(model.t, model.timestep) +
+                "x_N = {0:.2e}, u_N = {1:.2e}, u_N_2 = {2:.2e}, h_N = {3:.2e}, mass = {4:.2e}"
+                .format(x_N[0], u_N[0], q[-1]/h[-1], h[-1], mass))
 
 def map_to_arrays(w, map):
     
