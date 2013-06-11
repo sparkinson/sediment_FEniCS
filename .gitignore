@@ -1,0 +1,14 @@
+# compiled files
+*.pyc
+*.h
+*~
+
+# results
+*.json
+*.vtu
+*.pvtu
+*.pvd
+*.log*
+*.err*
+*.stat
+*.png

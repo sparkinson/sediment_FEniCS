@@ -86,10 +86,10 @@ def adjoint_setup(model):
     model.cfl = Constant(0.2)
 
     # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
-    model.q_b = Constant(0.2)
-    model.h_b = Constant(0.2)
-    model.phi_b = Constant(0.2)
-    model.phi_d_b = Constant(0.2)
+    model.q_b = Constant(0.1)
+    model.h_b = Constant(0.0)
+    model.phi_b = Constant(0.0)
+    model.phi_d_b = Constant(0.1)
 
     # discretisation
     model.q_degree = 2
@@ -157,6 +157,24 @@ elif job == 1:
     sw_io.write_array_to_file('deposit_data.json', phi_d, 'w')
     sw_io.write_array_to_file('runout_data.json', x_N, 'w')
 
+elif job == 4:  
+
+    adjoint_setup(model)
+    model.initialise_function_spaces()
+
+    phi_ic = project(Expression('1.0 - (0.8*cos(pow(x[0] +0.1,4.0)*pi))'), model.phi_FS)
+
+    model.setup(phi_ic = phi_ic) 
+
+    q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
+    sw_io.write_array_to_file('phi_ic_2.json', phi_ic.vector().array(), 'w')
+
+    model.solve(T = options.T)
+
+    q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
+    sw_io.write_array_to_file('deposit_data_2.json', phi_d, 'w')
+    sw_io.write_array_to_file('runout_data_2.json', x_N, 'w')
+
 else:
 
     adjoint_setup(model)
@@ -167,13 +185,13 @@ else:
     else:
         target = False
 
-    plotter = sw_io.Adjoint_Plotter('results/adj_{}_'.format(job), True, target=target)
+    # plotter = sw_io.Adjoint_Plotter('results/adj_{}_'.format(job), True, target=target)
 
     if job == 2:
 
         if options.adjoint_test:
             phi_ic = sw_io.create_function_from_file('phi_ic_adj{}_latest.json'.
-                                                     format(options.adjoint), model.phi_FS)
+                                                     format(job), model.phi_FS)
         else:
             phi_ic = project(Expression('1.0'), model.phi_FS)
 
@@ -192,18 +210,18 @@ else:
         int_1 = inner(x_N-x_N_aim, x_N-x_N_aim)*int_1_scale*dx
 
         # determine scaling
-        int_0_scale.assign(1e-2/assemble(int_0))
-        int_1_scale.assign(1e-4/assemble(int_1)) # 1e-4 t=5.0, 1e-4 t=10.0
-        ### int_0 1e-2, int_1 1e-4 - worked well
+        int_0_scale.assign(1e-5/assemble(int_0))
+        int_1_scale.assign(1e-7/assemble(int_1)) # 1e-4 t=5.0, 1e-4 t=10.0
+        ### int_0 1e-2, int_1 1e-4 - worked well for dimensionalised problem
 
         # functional regularisation
         reg_scale = Constant(1)
         int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
-        reg_scale_base = 1e-2       # 1e-2 for t=10.0
+        reg_scale_base = 1e-4       # 1e-2 for t=10.0
         reg_scale.assign(reg_scale_base)
 
         # functional
-        scaling = Constant(1e-1)  # 1e0 t=5.0, 1e-1 t=10.0
+        scaling = Constant(1e-0)  # 1e0 t=5.0, 1e-1 t=10.0
         J = Functional(scaling*(int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
 
     elif job == 3:
@@ -213,37 +231,49 @@ else:
         model.phi_b.assign(0.2)
         model.phi_d_b.assign(0.1)
 
-        phi_ic_0 = project(Expression('1.0'), model.phi_FS)
-        if options.adjoint_test:
-            # h_ic = sw_io.create_function_from_file('h_ic_adj{}_latest.json'.
-            #                                         format(options.adjoint), model.h_FS)
-            phi_ic = sw_io.create_function_from_file('phi_ic_adj{}_latest.json'.
-                                                      format(options.adjoint), model.phi_FS)
-            # q_a, q_pa, q_pb = sw_io.read_q_vals_from_file('q_ic_adj{}_latest.json'.
-            #                                                format(options.adjoint))
-            # q_a = Constant(q_a); q_pa = Constant(q_pa); q_pb = Constant(q_pb)
-        else:
-            phi_ic = phi_ic_0.copy(deepcopy = True)
-            # h_ic = project(Expression('0.2'), model.h_FS)
-            # q_a = Constant(0.0)
-            # q_pa = Constant(0.5)
-            # q_pb = Constant(1.0)
+        phi_ic_0 = project(Expression('1.0'), model.phi_FS)# - 0.1*cos(pi*x[0])'), model.phi_FS)
+        # if options.adjoint_test:
+        #     # h_ic = sw_io.create_function_from_file('h_ic_adj{}_latest.json'.
+        #     #                                         format(options.adjoint), model.h_FS)
+        #     phi_ic = sw_io.create_function_from_file('phi_ic_adj{}_latest.json'.
+        #                                               format(job), model.phi_FS)
+        #     # q_a, q_pa, q_pb = sw_io.read_q_vals_from_file('q_ic_adj{}_latest.json'.
+        #     #                                                format(options.adjoint))
+        #     # q_a = Constant(q_a); q_pa = Constant(q_pa); q_pb = Constant(q_pb)
+        # else:
+        #     phi_ic = phi_ic_0.copy(deepcopy = True)
+        #     # h_ic = project(Expression('0.2'), model.h_FS)
+        #     # q_a = Constant(0.0)
+        #     # q_pa = Constant(0.5)
+        #     # q_pb = Constant(1.0)
+        phi_ic = phi_ic_0.copy(deepcopy = True)
+        h_ic = project(Expression('1.0'), model.h_FS)
 
-        model.setup(phi_ic = phi_ic) #, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
+        model.setup(phi_ic = phi_ic, h_ic = h_ic) #, phi_ic = phi_ic, q_a = q_a, q_pa = q_pa, q_pb = q_pb)
         model.solve(T = options.T)
         (q, h, phi, phi_d, x_N, u_N) = split(model.w[0])
 
         # functional
+        def smooth_pos(val):
+            return (val + smooth_abs(val))/2.0
+        def smooth_neg(val):
+            return (val - smooth_abs(val))/2.0
+        def smooth_abs(val):
+            return (val**2.0 + 1e-8)**0.5
+
         int_scale = Constant(1)
         inv_x_N = 1.0/x_N
-        filter_val = 1.0-exp(1e1*(model.X*model.x_N_/x_N - 1.0))
-        filter = (filter_val + abs(filter_val))/2.0
-        pos_grads_on = (grad(phi_d)[0] + abs(grad(phi_d)[0]))/(2*grad(phi_d)[0])
-        neg_grads_on = (grad(phi_d)[0] - abs(grad(phi_d)[0]))/(2*grad(phi_d)[0])
-        pos_f = pos_grads_on*(1.0 - exp(-1e4*grad(phi_d)[0]))
-        neg_f = neg_grads_on*(exp(1e4*grad(phi_d)[0]) - 1.0)/(x_N-model.L) 
-        int = (1.0 - filter)*(pos_f + neg_f)*int_scale
-        int_scale.assign(1e-2/abs(assemble(int*dx)))
+        filter_val = 1.0-exp(1e1*(model.X*x_N/model.x_N_ - 1.0))
+        filter = smooth_pos(filter_val)
+        g_phi_d = grad(phi_d)[0]
+        pos_grads_on = smooth_pos(g_phi_d)/smooth_abs(g_phi_d)
+        neg_grads_on = smooth_neg(g_phi_d)/smooth_abs(g_phi_d)
+        # -1e4 for dimensionalised
+        pos_f = pos_grads_on*(exp(1e0*g_phi_d) - 1.0)
+        neg_f = neg_grads_on*(exp(1e0*g_phi_d) - 1.0)/(x_N-model.x_N_)**3.0
+        # int = (1.0 - filter)*(pos_f - neg_f)*int_scale
+        int = (1.0 - filter)*(pos_f - neg_f)*int_scale
+        int_scale.assign(1e0/abs(assemble(int*dx)))
 
         # func = Function(model.phi_FS)
         # trial = TrialFunction(model.phi_FS)
@@ -258,13 +288,14 @@ else:
         # int_cons = Constant(-1e2)*(phi*dx - phi_ic_0*dx)
 
         # regulator    pow 4 scale -5e-2 / pow 3 scale -5e-2
-        reg_scale = Constant(-5e-2)
+        reg_scale = Constant(0.0)#-1.0e-10)#-5e-4)
         reg_power = Constant(2.0)
-        int_reg = (inner(grad(phi),grad(phi))**reg_power*reg_scale + 
-                   inner(grad(h),grad(h))**reg_power*reg_scale)
+        int_reg = (inner(grad(phi),grad(phi))**reg_power*reg_scale #  + 
+                   # inner(grad(h),grad(h))**reg_power*reg_scale
+                   )
 
-        scaling = Constant(1e-1) 
-        J = Functional(scaling*int*dx*dt[FINISH_TIME] + scaling*int_reg*dx*dt[START_TIME])
+        scaling = Constant(1e-0) 
+        J = Functional(scaling*int*dx*dt[FINISH_TIME])# + scaling*int_reg*dx*dt[START_TIME])
 
         # print int_scale((0,0))
         # q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
@@ -296,7 +327,7 @@ else:
         import matplotlib.pyplot as plt
 
         dJdphi = compute_gradient(J, InitialConditionParameter(phi_ic), forget=False)
-        # dJdh = compute_gradient(J, InitialConditionParameter(h_ic), forget=False)
+        dJdh = compute_gradient(J, InitialConditionParameter(h_ic), forget=False)
         # dJdq_a = compute_gradient(J, ScalarParameter(q_a), forget=False)
         # dJdq_pa = compute_gradient(J, ScalarParameter(q_a), forget=False)
         # dJdq_pb = compute_gradient(J, ScalarParameter(q_a), forget=False)
@@ -308,8 +339,11 @@ else:
     # clear old data
     sw_io.clear_file('phi_ic_adj{}.json'.format(job))
     sw_io.clear_file('h_ic_adj{}.json'.format(job))
+    sw_io.clear_file('phi_d_adj{}.json'.format(job))
     sw_io.clear_file('q_ic_adj{}.json'.format(job))
     j_log = []
+
+    parameters["adjoint"]["stop_annotating"] = True
 
     ##############################
     #### REDUCED FUNCTIONAL HACK
@@ -368,11 +402,12 @@ else:
             (fwd_var, output) = adjointer.get_forward_solution(adjointer.equation_count - 1)
             var = adjointer.get_variable_value(fwd_var)
             q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(var.data, model.map_dict)
+            sw_io.write_array_to_file('phi_d_adj{}_latest.json'.format(job),phi_d,'w')
+            sw_io.write_array_to_file('phi_d_adj{}.json'.format(job),phi_d,'a')
 
-            # from IPython import embed; embed()      
+            # from IPython import embed; embed()  
             
-
-            plotter.update_plot(phi_ic, phi_d, j)
+            # plotter.update_plot(phi_ic, phi_d, j)
 
             print "* * * J = {}".format(j)
 
@@ -398,6 +433,10 @@ else:
                                                   ])
         bounds = [[0.5], 
                   [1.5]]
+        
+        # # set int_1 scale to 0.0 initially 
+        # # creates instabilities until a rough value has been obtained.
+        # int_1_scale.assign(0.0)
 
         for i in range(15):
             reg_scale.assign(reg_scale_base*2**(0-4*i))
@@ -408,9 +447,13 @@ else:
             
             # SLSQP L-BFGS-B Newton-CG
             m_opt = minimize(reduced_functional, method = "L-BFGS-B", 
-                             options = {'maxiter': 1,
+                             options = {'maxiter': 5,
                                         'disp': True, 'gtol': 1e-20, 'ftol': 1e-20}, 
                              bounds = bounds) 
+
+            # # rescale integral scaling
+            # int_0_scale.assign(1e-5/assemble(int_0))
+            # int_1_scale.assign(1e-7/assemble(int_1))
 
     elif job == 3:
 

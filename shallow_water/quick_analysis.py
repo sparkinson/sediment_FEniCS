@@ -4,7 +4,7 @@ import json
 from numpy import *
 import matplotlib.pyplot as plt
 
-f = open('phi_ic_adj3.json','r')
+f = open('phi_ic_adj2.json','r')
 data = array([json.loads(line) for line in f])
 f.close()
 
@@ -32,11 +32,11 @@ except:
 
 plt.show()
 
-f = open('h_ic_adj2.json','r')
+f = open('phi_d_adj2.json','r')
 data = array([json.loads(line) for line in f])
 f.close()
 
-f = open('h_ic.json','r')
+f = open('deposit_data.json','r')
 target = array(json.loads(f.readline()))
 f.close()
 
