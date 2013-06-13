@@ -22,7 +22,7 @@ parser.add_option('-t', '--adjoint_test',
                   action='store_true', dest='adjoint_test', default=False,
                   help='test adjoint solution')
 parser.add_option('-T', '--end_time',
-                  dest='T', type=float, default=2.0,
+                  dest='T', type=float, default=0.5,
                   help='simulation end time')
 parser.add_option('-p', '--plot',
                   dest='plot', action='store_true', default=False,
@@ -466,6 +466,10 @@ else:
 
     if job == 2 or job == 5:
 
+        it = 5
+        if job == 5:
+            it = 2
+
         reduced_functional = MyReducedFunctional(J, 
                                                  [InitialConditionParameter(phi_ic),
                                                   # InitialConditionParameter(h_ic),
@@ -489,7 +493,7 @@ else:
             
             # SLSQP L-BFGS-B Newton-CG
             m_opt = minimize(reduced_functional, method = "L-BFGS-B", 
-                             options = {'maxiter': 5,
+                             options = {'maxiter': it,
                                         'disp': True, 'gtol': 1e-20, 'ftol': 1e-20}, 
                              bounds = bounds) 
 

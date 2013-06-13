@@ -44,10 +44,10 @@ class Model():
 
     # time stepping
     t = 0.0
-    timestep = dX_/50.0
+    timestep = dX_/10.0
     adapt_timestep = True
     adapt_initial_timestep = True
-    cfl = Constant(0.2)
+    cfl = Constant(1.0)
 
     # mms test (default False)
     mms = False
@@ -418,5 +418,5 @@ if __name__ == '__main__':
     model = Model()    
     model.plot = 0.05
     model.initialise_function_spaces()
-    model.setup(zero_q = True)     
-    model.solve(5.0) 
+    model.setup(zero_q = False)     
+    model.solve(60.0) 
