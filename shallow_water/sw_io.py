@@ -176,6 +176,24 @@ class Adjoint_Plotter():
     def clean_up(self):
         plt.close()
 
+def generate_dof_map(model):
+    
+    # get dof_maps
+    model.map_dict = dict()
+    for i in range(6):
+        if model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()) + 1:   # P1CG 
+            model.map_dict[i] = [model.W.sub(i).dofmap().cell_dofs(j)[0] for j in range(len(model.mesh.cells()))]
+            model.map_dict[i].append(model.W.sub(i).dofmap().cell_dofs(len(model.mesh.cells()) - 1)[-1])
+        elif model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()) * 2 + 1:   # P2CG 
+            model.map_dict[i] = [model.W.sub(i).dofmap().cell_dofs(j)[:-1] for j in range(len(model.mesh.cells()))]
+            model.map_dict[i] = list(np.array(model.map_dict[i]).flatten())
+            model.map_dict[i].append(model.W.sub(i).dofmap().cell_dofs(len(model.mesh.cells()) - 1)[-1])    
+        elif model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()) * 2:   # P1DG
+            model.map_dict[i] = [model.W.sub(i).dofmap().cell_dofs(j) for j in range(len(model.mesh.cells()))]
+            model.map_dict[i] = list(np.array(model.map_dict[i]).flatten())
+        else:   # R
+            model.map_dict[i] = model.W.sub(i).dofmap().cell_dofs(0)  
+
 def clear_model_files(file):
 
     files = [file + '_q.json',

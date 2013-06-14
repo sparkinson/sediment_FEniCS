@@ -20,7 +20,7 @@ phi_d = function(_sage_const_2p0 , _sage_const_1p2 , _sage_const_1p0 , _sage_con
 
 s_h = _sage_const_1p /pi*(x*u_N*diff(h,x) - diff(q,x))
 alpha = _sage_const_1en1 *(_sage_const_2 *q/h + (phi*h)**_sage_const_0p5 )*h # u must always be positive and b*delta_x must be 1e-1
-s_q = _sage_const_1p /pi*(x*u_N*diff(q,x) - diff(q**_sage_const_2 /h + _sage_const_0p5 *(phi*h), x) + diff(alpha * diff(q/h, x), x))
+s_q = _sage_const_1p /pi*(x*u_N*diff(q,x) - diff(q**_sage_const_2 /h + _sage_const_0p5 *(phi*h), x))# + diff(alpha * diff(q/h, x), x))
 s_phi = _sage_const_1p /pi*(x*u_N*diff(phi, x) - diff(q*phi/h, x)) - phi/h
 s_phi_d = _sage_const_1p /pi*x*u_N*diff(phi_d, x) + phi/h
 

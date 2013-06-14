@@ -9,7 +9,7 @@ import numpy as np
 import sys
 
 class MMS_Model(sw.Model):
-    def setup(self, dX, dT, disc):
+    def setup(self, dX, dT):
         self.mms = True
 
         # define constants
@@ -21,6 +21,9 @@ class MMS_Model(sw.Model):
         self.beta_ = 1.0
         self.beta = Constant(1.0)
 
+        # reset time
+        self.t = 0.0
+
         self.h_b = Constant(0.0)
         self.phi_b = Constant(0.0)
         self.phi_d_b = Constant(0.0)
@@ -30,8 +33,10 @@ class MMS_Model(sw.Model):
         self.phi_degree = 1
         self.phi_d_degree = 1
 
-        self.h_disc = disc
-        self.phi_d_disc = disc
+        self.q_disc = 'CG'
+        self.h_disc = 'CG'
+        self.phi_disc = 'CG'
+        self.phi_d_disc = 'CG'
         
         self.initialise_function_spaces()
 
@@ -47,21 +52,23 @@ class MMS_Model(sw.Model):
                     , self.W.ufl_element())), self.W)
 
         # define bc's
-        bch = DirichletBC(self.W.sub(1), Expression(mms.h()), 
+        bcq = DirichletBC(self.W.sub(0), Expression(mms.q(), degree=self.q_degree), 
                           "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
-        bcphi = DirichletBC(self.W.sub(2), Expression(mms.phi()), 
-                            "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
-        bcphi_d = DirichletBC(self.W.sub(3), Expression(mms.phi_d()), 
-                            "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
-        bcq = DirichletBC(self.W.sub(0), Expression(mms.q()), 
+        bch = DirichletBC(self.W.sub(1), Expression(mms.h(), degree=self.h_degree), 
                           "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
+        bcphi = DirichletBC(self.W.sub(2), Expression(mms.phi(), degree=self.phi_degree), 
+                            "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
+        bcphi_d = DirichletBC(self.W.sub(3), Expression(mms.phi_d(), degree=self.phi_d_degree), 
+                            "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
         self.bc = [bcq, bch, bcphi, bcphi_d]
+        self.bc = []
 
         # define source terms
-        self.s_q = Expression(mms.s_q(), self.W.sub(0).ufl_element())
-        self.s_h = Expression(mms.s_h(), self.W.sub(0).ufl_element())
-        self.s_phi = Expression(mms.s_phi(), self.W.sub(0).ufl_element())
-        self.s_phi_d = Expression(mms.s_phi_d(), self.W.sub(0).ufl_element())
+        s_q = Expression(mms.s_q(), self.W.sub(0).ufl_element())
+        s_h = Expression(mms.s_h(), self.W.sub(0).ufl_element())
+        s_phi = Expression(mms.s_phi(), self.W.sub(0).ufl_element())
+        s_phi_d = Expression(mms.s_phi_d(), self.W.sub(0).ufl_element())
+        self.S = [s_q, s_h, s_phi, s_phi_d]
 
         self.timestep = dT
         self.adapt_timestep = False
@@ -70,16 +77,16 @@ class MMS_Model(sw.Model):
         
         # initialise plotting
         if self.plot:
-            self.plotter = sw_io.Plotter(self)
+            self.plotter = sw_io.Plotter(self, rescale=True, file=self.save_loc)
             self.plot_t = self.plot
 
 def mms_test(plot, show, save):
 
     def getError(model):
-        Fq = FunctionSpace(model.mesh, "CG", model.q_degree + 1)
-        Fh = FunctionSpace(model.mesh, model.h_disc, model.h_degree + 1)
-        Fphi = FunctionSpace(model.mesh, "CG", model.phi_degree + 1)
-        Fphi_d = FunctionSpace(model.mesh, model.phi_d_disc, model.phi_d_degree + 1)
+        Fq = FunctionSpace(model.mesh, "CG", model.q_degree + 2)
+        Fh = FunctionSpace(model.mesh, model.h_disc, model.h_degree + 2)
+        Fphi = FunctionSpace(model.mesh, "CG", model.phi_degree + 2)
+        Fphi_d = FunctionSpace(model.mesh, model.phi_d_disc, model.phi_d_degree + 2)
 
         S_q = project(Expression(mms.q(), degree=5), Fq)
         S_h = project(Expression(mms.h(), degree=5), Fh)
@@ -94,26 +101,25 @@ def mms_test(plot, show, save):
 
         return Eh, Ephi, Eq, Ephi_d 
 
-    model = MMS_Model()
+    set_log_level(ERROR)    
+
+    model = MMS_Model() 
     model.plot = plot
     model.show_plot = show
     model.save_plot = save
- 
-    set_log_level(ERROR)    
-
-    disc = 'CG'
-    print disc
     
     h = [] # element sizes
     E = [] # errors
-    for i, nx in enumerate([24, 48]):
-        dT = (pi/nx) #* 0.5
+    for i, nx in enumerate([6, 12, 24, 48, 96, 192]):
         h.append(pi/nx)
-        print 'dt is: ', dT, '; h is: ', h[-1]
-        model.setup(h[-1], dT, disc)
-        model.solve(tol = 1e-3)
+        print 'h is: ', h[-1]
+        model.save_loc = 'results/{}'.format(h[-1])
+        model.setup(h[-1], 1.0)
+        model.solve(T = 5.0)
         E.append(getError(model))
 
+    print ( "h=%10.2E rh=0.00 rphi=0.00 rq=0.00 rphi_d=0.00 Eh=%.2e Ephi=%.2e Eq=%.2e Ephi_d=%.2e" 
+            % (h[0], E[0][0], E[0][1], E[0][2], E[0][3]) ) 
     for i in range(1, len(E)):
         rh = np.log(E[i][0]/E[i-1][0])/np.log(h[i]/h[i-1])
         rphi = np.log(E[i][1]/E[i-1][1])/np.log(h[i]/h[i-1])
@@ -127,12 +133,12 @@ def mms_test(plot, show, save):
     
     # h = [] # element sizes
     # E = [] # errors
-    # for i, nx in enumerate([4, 8, 16]):#, 24]):
-    #     dT = (pi/nx) * 0.5
+    # for i, nx in enumerate([48, 96, 192]):
+    #     dT = (pi/nx) * 1.0
     #     h.append(pi/nx)
     #     print 'dt is: ', dT, '; h is: ', h[-1]
     #     model.setup(h[-1], dT, disc)
-    #     model.solve(tol = 1e-2)
+    #     model.solve(tol = dT/50.0)
     #     E.append(getError(model))
 
     # for i in range(1, len(E)):

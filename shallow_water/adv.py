@@ -6,6 +6,7 @@ set_log_level(ERROR)
 
 mesh = IntervalMesh(50, 0.0, 1.0)
 n = FacetNormal(mesh)
+n = n[0]
 h = CellSize(mesh)
 
 # left boundary marked as 0, right as 1
@@ -19,7 +20,7 @@ left_boundary.mark(exterior_facet_domains, 0)
 ds = Measure("ds")[exterior_facet_domains] 
 
 ele_disc = "DG"
-ele_order = 1
+ele_order = 5
 SU = True
 SU_scale = 0.01
 FS = FunctionSpace(mesh, ele_disc, ele_order)
@@ -39,15 +40,15 @@ k = Constant(k_)
 u_X = u_N*X
 un_up = (u_X*n + abs(u_X*n))/2.0
 un_up_bc = -(u_X*n - abs(u_X*n))/2.0
-F = v*(u[0] - u[1])*dx - grad(v)*u_X*u_td*k*dx - v*S*k*dx
+F = v*(u[0] - u[1])*dx - grad(v)[0]*u_X*u_td*k*dx - v*S*k*dx
 if ele_disc == "CG":
     F += v*n*u_X*u_td*k*ds(0)  
     if SU == True:
         tau = Constant(SU_scale)*h/((u_X + 1e-10)**2.0)**0.5
-        F += tau*inner(u_X, grad(v))*inner(u_X, grad(u_td))*k*dx - \
-            tau*inner(u_X, n*v)*inner(u_X, grad(u_td))*k*ds(0) # stabilisation
+        F += tau*inner(u_X, grad(v)[0])*inner(u_X, grad(u_td)[0])*k*dx - \
+            tau*inner(u_X, n*v)*inner(u_X, grad(u_td)[0])*k*ds(0) # stabilisation
 else:
-    F += jump(v)*(un_up('+')*u_td('+') - un_up('-')*u_td('-'))*avg(k)*dS - v*un_up_bc*1.0*k*ds(1)   
+    F += jump(v)*(un_up('+')*u_td('+') - un_up('-')*u_td('-'))*avg(k)*dS - v*un_up_bc*0.0*k*ds(1)   
 
 title = "{}{}".format(ele_order, ele_disc)
 if SU == True:
