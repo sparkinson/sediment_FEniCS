@@ -96,6 +96,7 @@ class Plotter():
 
         val_x = np.linspace(0.0, x_n, model.L_/model.dX_ + 1)
 
+        # PnDG
         if len(u) > len(val_x):
             v = val_x
             val_x = [v[0]]
@@ -103,6 +104,13 @@ class Plotter():
                 val_x.append(val_x_)
                 val_x.append(val_x_)
             val_x.append(v[-1])
+
+        # P0DG
+        if len(u) < len(val_x):
+            v = val_x
+            val_x = []
+            for i in range(len(v[:-1])):
+                val_x.append(v[i:i+1].mean())
 
         u_int = np.interp(x, val_x, u)
         
@@ -180,6 +188,7 @@ def generate_dof_map(model):
     
     # get dof_maps
     model.map_dict = dict()
+
     for i in range(6):
         if model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()) + 1:   # P1CG 
             model.map_dict[i] = [model.W.sub(i).dofmap().cell_dofs(j)[0] for j in range(len(model.mesh.cells()))]
@@ -188,8 +197,15 @@ def generate_dof_map(model):
             model.map_dict[i] = [model.W.sub(i).dofmap().cell_dofs(j)[:-1] for j in range(len(model.mesh.cells()))]
             model.map_dict[i] = list(np.array(model.map_dict[i]).flatten())
             model.map_dict[i].append(model.W.sub(i).dofmap().cell_dofs(len(model.mesh.cells()) - 1)[-1])    
+        elif model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()):   # P0DG
+            model.map_dict[i] = [model.W.sub(i).dofmap().cell_dofs(j) for j in range(len(model.mesh.cells()))]
+            model.map_dict[i] = list(np.array(model.map_dict[i]).flatten())
         elif model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()) * 2:   # P1DG
             model.map_dict[i] = [model.W.sub(i).dofmap().cell_dofs(j) for j in range(len(model.mesh.cells()))]
+            model.map_dict[i] = list(np.array(model.map_dict[i]).flatten())   
+        elif model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()) * 3:   # P2DG
+            dof = model.W.sub(i).dofmap()
+            model.map_dict[i] = [[dof.cell_dofs(j)[0], dof.cell_dofs(j)[1]] for j in range(len(model.mesh.cells()))]
             model.map_dict[i] = list(np.array(model.map_dict[i]).flatten())
         else:   # R
             model.map_dict[i] = model.W.sub(i).dofmap().cell_dofs(0)  

@@ -113,27 +113,38 @@ if job == 0:
     model.beta_ = 5e-3
 
     # time stepping
-    model.timestep = model.dX_/50.0
-    model.adapt_timestep = True
+    model.timestep = model.dX_/500.0
+    model.adapt_timestep = False
     model.adapt_initial_timestep = False
     model.cfl = Constant(0.2)
 
     # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
-    model.q_b = Constant(0.2)
+    # model.q_b = Constant(0.2)
+    model.q_b = Constant(0.0)
     model.h_b = Constant(0.0)
     model.phi_b = Constant(0.0)
     model.phi_d_b = Constant(0.0)
 
+    # # discretisation
+    # model.q_degree = 2
+    # model.h_degree = 1
+    # model.phi_degree = 1
+    # model.phi_d_degree = 1
+    # model.h_disc = "CG"
+    # model.phi_d_disc = "CG"
+
     # discretisation
     model.q_degree = 2
-    model.h_degree = 1
-    model.phi_degree = 1
-    model.phi_d_degree = 1
-    model.h_disc = "CG"
-    model.phi_d_disc = "CG"
+    model.h_degree = 2
+    model.phi_degree = 2
+    model.phi_d_degree = 2
+    model.q_disc = "DG"
+    model.h_disc = "DG"
+    model.phi_disc = "DG"
+    model.phi_d_disc = "DG"
 
     model.initialise_function_spaces()
-    model.setup(zero_q = True)     
+    model.setup(zero_q = True)
 
     T = 75.0
     if (options.T): T = options.T

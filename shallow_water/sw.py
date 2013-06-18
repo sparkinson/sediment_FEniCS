@@ -233,7 +233,8 @@ class Model():
         # time discretisation of values
         def time_discretise(u):
             if not self.mms:
-                return 0.5*u[0] + 0.5*u[1]
+                # return 0.5*u[0] + 0.5*u[1]
+                return u[0]
             else:
                 return u[0]
 
@@ -300,14 +301,15 @@ class Model():
                     F -= self.k*v*u_td*self.n*(self.ds(0) + self.ds(1))
                     F += self.k*v*self.w_ic[index]*self.n*(self.ds(0) + self.ds(1)) 
                 elif weak_b:
-                    F -= self.k*v*u_td*self.n*weak_b[1]
-                    F += self.k*v*weak_b[0]*self.n*weak_b[1]
+                    for weak_b_ in weak_b:
+                        F -= self.k*v*u_td*self.n*weak_b_[1]
+                        F += self.k*v*weak_b_[0]*self.n*weak_b_[1]
 
                 # stabilisation
                 if stab((0,0)) > 0.0:
                     tau = Constant(stab)*self.dX/smooth_abs(ux)
                     F += tau*ux*grad(v)[0]*ux*grad(u_td)[0]*self.k*dx - \
-                        tau*ux*self.n*v*ux*grad(weak_b[0])[0]*self.k*weak_b[1]
+                        tau*ux*self.n*v*ux*grad(u_td)[0]*self.k*(self.ds(0) + self.ds(1))
 
                 if grad_term:
                     F -= self.k*grad(v)[0]*grad_term*dx
@@ -325,7 +327,7 @@ class Model():
         # MOMENTUM 
         F_q =      createForm(q, q_td, self.q_tf, 0, 
                               self.q_disc, Constant(0.0), 
-                              weak_b = [u_N_td*h_td, self.ds(1)],
+                              weak_b = ([0.0, self.ds(0)], [u_N_td*h_td, self.ds(1)]),
                               grad_term = q_td**2.0/h_td + 0.5*phi_td*h_td)
 
         # CONSERVATION 
@@ -342,7 +344,7 @@ class Model():
         # DEPOSIT
         F_phi_d =  createForm(phi_d, phi_d_td, self.phi_d_tf, 3, 
                               self.phi_d_disc, self.phi_d_b,
-                              weak_b = [0.0, self.ds(1)],
+                              weak_b = [[0.0, self.ds(1)]],
                               settling = -self.beta*phi_td/h_td)
 
         # NOSE LOCATION AND SPEED
@@ -425,7 +427,7 @@ class Model():
 if __name__ == '__main__':
 
     model = Model()    
-    # model.plot = 0.05
+    model.plot = 0.00001
     model.initialise_function_spaces()
     model.setup(zero_q = False)     
     model.solve(60.0) 
