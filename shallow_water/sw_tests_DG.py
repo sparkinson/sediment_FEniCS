@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import sw, sw_io
+import sw_DG, sw_io
 from dolfin import *
 from dolfin_adjoint import *
 from optparse import OptionParser
@@ -8,7 +8,7 @@ import sw_mms_exp as mms
 import numpy as np
 import sys
 
-class MMS_Model(sw.Model):
+class MMS_Model(sw_DG.Model):
     def setup(self, dX, dT):
         self.mms = True
 
@@ -28,22 +28,25 @@ class MMS_Model(sw.Model):
         self.phi_b = Constant(0.0)
         self.phi_d_b = Constant(0.0)
 
-        self.q_degree = 2
-        self.h_degree = 2
-        self.phi_degree = 2
-        self.phi_d_degree = 2
+        self.q_degree = 1
+        self.h_degree = 1
+        self.phi_degree = 1
+        self.phi_d_degree = 1
 
-        self.q_disc = 'DG'
-        self.h_disc = 'DG'
-        self.phi_disc = 'DG'
-        self.phi_d_disc = 'DG'
+        self.q_disc = 'CG'
+        self.h_disc = 'CG'
+        self.phi_disc = 'CG'
+        self.phi_d_disc = 'CG'
         
         self.initialise_function_spaces()
 
         self.w_ic = project((Expression(
                     (
                         mms.q(), 
+                        mms.q(), 
                         mms.h(),
+                        mms.h(),
+                        mms.phi(),
                         mms.phi(),
                         mms.phi_d(),
                         'pi',
@@ -68,24 +71,25 @@ class MMS_Model(sw.Model):
         s_h = Expression(mms.s_h(), self.W.sub(0).ufl_element())
         s_phi = Expression(mms.s_phi(), self.W.sub(0).ufl_element())
         s_phi_d = Expression(mms.s_phi_d(), self.W.sub(0).ufl_element())
-        self.S = [s_q, s_h, s_phi, s_phi_d]
+        s_CG = Constant(0.0)
+        self.S = [s_q, s_CG, s_h, s_CG, s_phi, s_CG, s_phi_d]
 
         self.timestep = dT
         self.adapt_timestep = False
 
         self.generate_form()
         
-        # initialise plotting
-        if self.plot:
-            self.plotter = sw_io.Plotter(self, rescale=True, file=self.save_loc)
-            self.plot_t = self.plot
+        # # initialise plotting
+        # if self.plot:
+        #     self.plotter = sw_io.Plotter(self, rescale=True, file=self.save_loc)
+        #     self.plot_t = self.plot
 
 def mms_test(plot, show, save):
 
     def getError(model):
-        Fq = FunctionSpace(model.mesh, "CG", model.q_degree + 2)
+        Fq = FunctionSpace(model.mesh, model.q_disc, model.q_degree + 2)
         Fh = FunctionSpace(model.mesh, model.h_disc, model.h_degree + 2)
-        Fphi = FunctionSpace(model.mesh, "CG", model.phi_degree + 2)
+        Fphi = FunctionSpace(model.mesh, model.phi_disc, model.phi_degree + 2)
         Fphi_d = FunctionSpace(model.mesh, model.phi_d_disc, model.phi_d_degree + 2)
 
         S_q = project(Expression(mms.q(), degree=5), Fq)
@@ -93,15 +97,15 @@ def mms_test(plot, show, save):
         S_phi = project(Expression(mms.phi(), degree=5), Fphi)
         S_phi_d = project(Expression(mms.phi_d(), degree=5), Fphi_d)
 
-        q, h, phi, phi_d, x_N, u_N = model.w[0].split()
-        Eh = errornorm(h, S_h, norm_type="L2", degree_rise=2)
+        q, q_cg, h, h_cg, phi, phi_cg, phi_d, x_N, u_N = model.w[0].split()
+        Eh = errornorm(h_cg, S_h, norm_type="L2", degree_rise=2)
         Ephi = errornorm(phi, S_phi, norm_type="L2", degree_rise=2)
         Eq = errornorm(q, S_q, norm_type="L2", degree_rise=2)
         Ephi_d = errornorm(phi_d, S_phi_d, norm_type="L2", degree_rise=2)
 
         return Eh, Ephi, Eq, Ephi_d 
 
-    set_log_level(PROGRESS)    
+    set_log_level(ERROR)    
 
     model = MMS_Model() 
     model.plot = plot
@@ -110,7 +114,7 @@ def mms_test(plot, show, save):
     
     h = [] # element sizes
     E = [] # errors
-    for i, nx in enumerate([3, 6, 12, 24, 48, 96, 192]):
+    for i, nx in enumerate([12, 24, 48, 96, 192]):
         h.append(pi/nx)
         print 'h is: ', h[-1]
         model.save_loc = 'results/{}'.format(h[-1])
@@ -151,7 +155,7 @@ def mms_test(plot, show, save):
 
 def taylor_tester(plot, show, save):
 
-    model = sw.Model()
+    model = sw_DG.Model()
 
     model.dX = 5e-2
     model.timestep = 1e-2

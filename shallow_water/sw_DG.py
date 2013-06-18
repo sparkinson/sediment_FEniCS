@@ -14,7 +14,8 @@ import sw_io
 
 parameters["form_compiler"]["optimize"]     = False
 parameters["form_compiler"]["cpp_optimize"] = True
-# parameters['krylov_solver']['relative_tolerance'] = 1e-15
+parameters['krylov_solver']['absolute_tolerance'] = 1e-20
+parameters['krylov_solver']['relative_tolerance'] = 1e-20
 # parameters['krylov_solver']['maximum_iterations'] = 1000000
 dolfin.parameters["optimization"]["test_gradient"] = False
 dolfin.parameters["optimization"]["test_gradient_seed"] = 0.1
@@ -23,6 +24,9 @@ solver_parameters = {}
 solver_parameters["newton_solver"] = {}
 solver_parameters["newton_solver"]["maximum_iterations"] = 15
 solver_parameters["newton_solver"]["relaxation_parameter"] = 1.0
+# solver_parameters["newton_solver"]["absolute_tolerance"] = 1E-13
+# solver_parameters["newton_solver"]["relative_tolerance"] = 1E-13
+# print solver_parameters["newton_solver"].keys()
 # info(parameters, True)
 # set_log_active(False)
 set_log_level(ERROR)
@@ -68,20 +72,20 @@ class Model():
     eps = 1e-12
 
     # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
-    q_b = Constant(0.0)
+    q_b = Constant(0.2)
     h_b = Constant(0.0)
     phi_b = Constant(0.0)
     phi_d_b = Constant(0.0)
 
     # discretisation
     q_degree = 2
-    h_degree = 2
-    phi_degree = 2
-    phi_d_degree = 2
-    q_disc = "DG"
-    h_disc = "DG"
-    phi_disc = "DG"
-    phi_d_disc = "DG"
+    h_degree = 1
+    phi_degree = 1
+    phi_d_degree = 1
+    q_disc = "CG"
+    h_disc = "CG"
+    phi_disc = "CG"
+    phi_d_disc = "CG"
 
     def initialise_function_spaces(self):
 
@@ -107,106 +111,31 @@ class Model():
         self.h_FS = FunctionSpace(self.mesh, self.h_disc, self.h_degree)
         self.phi_FS = FunctionSpace(self.mesh, self.phi_disc, self.phi_degree)
         self.phi_d_FS = FunctionSpace(self.mesh, self.phi_d_disc, self.phi_d_degree)
+        self.cg_FS = FunctionSpace(self.mesh, "CG", 1)
         self.var_N_FS = FunctionSpace(self.mesh, "R", 0)
-        self.W = MixedFunctionSpace([self.q_FS, self.h_FS, self.phi_FS, self.phi_d_FS, self.var_N_FS, self.var_N_FS])
+        self.W = MixedFunctionSpace([self.q_FS, self.cg_FS, 
+                                     self.h_FS, self.cg_FS, 
+                                     self.phi_FS, self.cg_FS, 
+                                     self.phi_d_FS, 
+                                     self.var_N_FS, 
+                                     self.var_N_FS])
         self.X_FS = FunctionSpace(self.mesh, "CG", 1)
 
         # generate dof_map
         sw_io.generate_dof_map(self)
 
         # define test functions
-        (self.q_tf, self.h_tf, self.phi_tf, self.phi_d_tf, self.x_N_tf, self.u_N_tf) = TestFunctions(self.W)
+        (self.q_tf, self.q_cg_tf, 
+         self.h_tf, self.h_cg_tf, 
+         self.phi_tf, self.phi_cg_tf, 
+         self.phi_d_tf, 
+         self.x_N_tf, self.u_N_tf) = TestFunctions(self.W)
 
         # initialise functions
         X_ = project(Expression('x[0]'), self.X_FS)
         self.X = Function(X_, name='X')
         self.w = dict()
         self.w[0] = Function(self.W, name='U')
-
-    def setup(self, h_ic = None, phi_ic = None, 
-              q_a = Constant(0.0), q_pa = Constant(0.0), q_pb = Constant(1.0), 
-              w_ic = None, zero_q = False):
-        # q_a between 0.0 and 1.0 
-        # q_pa between 0.2 and 0.99 
-        # q_pb between 1.0 and 
-
-        # set current time to 0.0
-        self.t = 0.0
-
-        # define constants
-        self.Fr = Constant(self.Fr_, name="Fr")
-        self.beta = Constant(self.beta_, name="beta")
-
-        if type(w_ic) == type(None):
-            # define initial conditions
-            if type(h_ic) == type(None):
-                h_ic = 1.0 
-                h_N = 1.0 
-            else:
-                h_N = h_ic.vector().array()[-1]
-            if type(phi_ic) == type(None): 
-                phi_ic = 1.0 
-                phi_N = 1.0 
-            else:
-                phi_N = phi_ic.vector().array()[-1]
-
-            # calculate u_N component
-            trial = TrialFunction(self.var_N_FS)
-            test = TestFunction(self.var_N_FS)
-            u_N_ic = Function(self.var_N_FS, name='u_N_ic')
-            a = inner(test, trial)*self.ds(1)
-            L = inner(test, self.Fr*phi_ic**0.5)*self.ds(1)             
-            solve(a == L, u_N_ic)
-
-            # define q
-            q_N_ic = Function(self.var_N_FS, name='q_N_ic')
-            q_ic = Function(self.q_FS, name='q_ic')
-
-            # cosine initial condition for u
-            if not zero_q:
-                a = inner(test, trial)*self.ds(1)
-                L = inner(test, u_N_ic*h_ic)*self.ds(1)             
-                solve(a == L, q_N_ic)
-
-                trial = TrialFunction(self.q_FS)
-                test = TestFunction(self.q_FS)
-                a = inner(test, trial)*dx
-                q_b = Constant(1.0) - q_a  
-                f = (1.0 - (q_a*cos(((self.X/self.L)**q_pa)*np.pi) + q_b*cos(((self.X/self.L)**q_pb)*np.pi)))/2.0
-                L = inner(test, f*q_N_ic)*dx             
-                solve(a == L, q_ic)
-
-            # create ic array
-            self.w_ic = [
-                q_ic, 
-                h_ic, 
-                phi_ic, 
-                Function(self.phi_d_FS, name='phi_d_ic'), 
-                self.x_N_, 
-                u_N_ic
-                ]
-            
-        else:
-            # whole of w_ic defined externally
-            self.w_ic = w_ic
-
-        # define bc's
-        bcphi_d = DirichletBC(self.W.sub(3), '0.0', "near(x[0], 1.0) && on_boundary")
-        bcq = DirichletBC(self.W.sub(0), '0.0', "near(x[0], 0.0) && on_boundary")
-        self.bc = [bcq] #, bcphi_d]
-
-        self.generate_form()
-        
-        # initialise plotting
-        if self.plot:
-            self.plotter = sw_io.Plotter(self, rescale=True, file=self.save_loc)
-            self.plot_t = self.plot
-
-        # write ic's
-        if self.write:
-            sw_io.clear_model_files(file=self.save_loc)
-            sw_io.write_model_to_files(self, 'a', file=self.save_loc)
-            self.write_t = self.write
 
     def generate_form(self):
 
@@ -238,14 +167,17 @@ class Model():
                 return u[0]
 
         q = dict()
+        q_cg = dict()
         h = dict()
+        h_cg = dict()
         phi = dict()
+        phi_cg = dict()
         phi_d = dict()
         x_N = dict()
         u_N = dict()
 
-        q[0], h[0], phi[0], phi_d[0], x_N[0], u_N[0] = split(self.w[0])
-        q[1], h[1], phi[1], phi_d[1], x_N[1], u_N[1] = split(self.w[1])
+        q[0], q_cg[0], h[0], h_cg[0], phi[0], phi_cg[0], phi_d[0], x_N[0], u_N[0] = split(self.w[0])
+        q[1], q_cg[1], h[1], h_cg[1], phi[1], phi_cg[1], phi_d[1], x_N[1], u_N[1] = split(self.w[1])
 
         # define adaptive timestep form
         if self.adapt_timestep:
@@ -258,11 +190,16 @@ class Model():
             self.k = Constant(self.timestep)
 
         q_td = time_discretise(q)
+        q_cg_td = time_discretise(q_cg)
         # h_td = smooth_pos(time_discretise(h))
         h_td = time_discretise(h)
+        h_cg_td = time_discretise(h_cg)
         h_td_p = smooth_pos(time_discretise(h))
+        h_cg_td_p = smooth_pos(time_discretise(h_cg))
         phi_td = time_discretise(phi)
+        phi_cg_td = time_discretise(phi_cg)
         phi_td_p = smooth_pos(phi_td)
+        phi_cg_td_p = smooth_pos(time_discretise(phi_cg))
         phi_d_td = time_discretise(phi_d)
         x_N_td = time_discretise(x_N)
         inv_x_N = 1./x_N_td
@@ -273,33 +210,31 @@ class Model():
         uxn_down = smooth_neg(ux*self.n)
 
         # mass term, coordinate transformation, source, su and weak bc's
-        def createForm(u, u_td, v, index, disc, stab, weak_b = None, grad_term = None, settling = None, enable = True):
+        def transForm(u, u_td, v, index, disc, stab, weak_b = None):
 
-            if enable:
             # coordinate transforming advection term
-                F = - self.k*grad(v)[0]*ux*u_td*dx - self.k*v*grad(ux)[0]*u_td*dx
+            # F = self.k*v*ux*grad(u_td)[0]*dx
+            # integrated by parts
+            # F = - self.k*grad(v*ux)[0]*u_td*dx
+            F = - self.k*grad(v)[0]*ux*u_td*dx - self.k*v*grad(ux)[0]*u_td*dx
 
-                if disc == "DG":
-                    ux_n = uxn_down
-                else:
-                    ux_n = ux*self.n
+            # mass term
+            if not self.mms:
+                F += x_N_td*v*(u[0] - u[1])*dx
+            # source term
+            if self.mms:
+                F += x_N_td*v*self.S[index]*self.k*dx
+            
+            if disc == "CG":
 
-                # surface integrals for coordinate transforming advection term
-                F += avg(self.k)*jump(v)*(uxn_up('+')*u_td('+') - uxn_up('-')*u_td('-'))*dS 
-                F += self.k*v*ux_n*u_td*(self.ds(0) + self.ds(1))
-
-                # mass term
-                if not self.mms:
-                    F += x_N_td*v*(u[0] - u[1])*dx
-                # source term
-                if self.mms:
-                    F += x_N_td*v*self.S[index]*self.k*dx
+                # boundary integral for coordinate transforming advection term
+                F += self.k*v*ux*u_td*self.n*(self.ds(0) + self.ds(1))
 
                 # bc
                 if self.mms:
                     F -= self.k*v*u_td*self.n*(self.ds(0) + self.ds(1))
                     F += self.k*v*self.w_ic[index]*self.n*(self.ds(0) + self.ds(1)) 
-                elif weak_b:
+                elif b_val:
                     F -= self.k*v*u_td*self.n*weak_b[1]
                     F += self.k*v*weak_b[0]*self.n*weak_b[1]
 
@@ -309,41 +244,67 @@ class Model():
                     F += tau*ux*grad(v)[0]*ux*grad(u_td)[0]*self.k*dx - \
                         tau*ux*self.n*v*ux*grad(weak_b[0])[0]*self.k*weak_b[1]
 
-                if grad_term:
-                    F -= self.k*grad(v)[0]*grad_term*dx
-                    F += self.k*v*grad_term*self.n*(self.ds(0) + self.ds(1))
-                    F += avg(self.k)*jump(v)*avg(grad_term)*self.n('+')*dS
+            elif disc == "DG":
 
-                if settling:
-                    F += self.k*x_N_td*v*settling*dx
+                # interior interface jump terms for coordinate transforming advection term
+                F += avg(self.k)*jump(v)*(uxn_up('+')*u_td('+') - uxn_up('-')*u_td('-'))*dS 
+
+                # bc
+                if self.mms:
+                    F += self.k*v*uxn_down*self.w_ic[index]*(self.ds(0) + self.ds(1))
+                else:
+                    F += self.k*v*uxn_down*b_val*weak_b
 
             else:
-                F = v*(u[0] - u[1])*dx
+                sys.exit("unknown element type for function index {}".format(index))
 
             return F
 
         # MOMENTUM 
-        F_q =      createForm(q, q_td, self.q_tf, 0, 
-                              self.q_disc, Constant(0.0), 
-                              weak_b = [u_N_td*h_td, self.ds(1)],
-                              grad_term = q_td**2.0/h_td + 0.5*phi_td*h_td)
+        F_q = self.k*self.q_tf*grad(q_td**2.0/h_td + 0.5*phi_td*h_td)[0]*dx
+        # # integrated by parts
+        # F_q = - self.k*grad(self.q_tf)[0]*(q_td**2.0/h_td + 0.5*phi_td*h_td)*dx
+        # if self.h_disc == "CG":
+        #     F_q += self.k*self.q_tf*(self.w_ic[0]**2.0/self.w_ic[1] + 0.5*self.w_ic[2]*self.w_ic[1])*(self.ds(0) + self.ds(1))
+        #     # F_q += self.k*self.q_tf*(q_td**2.0/h_td + 0.5*phi_td*h_td)*(self.ds(0) + self.ds(1))
+        # # BONNECAZE STABILISATION
+        # u = q_td/h_td
+        # alpha = self.q_b*self.dX*(smooth_abs(u)+u+(phi_td_p*h_td_p)**0.5)*h_td
+        # F_q += self.k*grad(self.q_tf)[0]*alpha*grad(u)[0]*dx - \
+        #     self.k*self.q_tf*alpha*grad(u)[0]*self.n*(self.ds(0) + self.ds(1))  
+        # F_q += self.k*grad(self.q_tf)[0]*alpha*grad(u)[0]*dx - \
+        #     self.k*self.q_tf*alpha*grad(self.w_ic[0]/self.w_ic[1])[0]*self.n*(self.ds(0) + self.ds(1)) 
+        F_q = transForm(q, q_td, self.q_tf, 0, self.q_disc, Constant(0.0), weak_b = [u_N_td*h_td, self.ds(1)])
+
+        # MOMENTUM PROJECTION
+        F_cg_q = self.q_cg_tf*q_cg[0]*dx - self.q_cg_tf*q[0]*dx
+
+        # F_q = self.q_tf*(q[0] - q[1])*dx 
 
         # CONSERVATION 
-        F_h =      createForm(h, h_td, self.h_tf, 1, 
-                              self.h_disc, self.h_b,  
-                              grad_term = q_td)
+        F_h = self.k*self.h_tf*grad(q_td)[0]*dx
+        F_h += transForm(h, h_td, self.h_tf, 2, self.h_disc, self.h_b)
+
+        # CONSERVATION PROJECTION
+        F_cg_h = self.h_cg_tf*h_cg[0]*dx - self.h_cg_tf*h[0]*dx
+
+        # F_h = self.q_tf*(q[0] - q[1])*dx 
 
         # VOLUME FRACTION
-        F_phi =    createForm(phi, phi_td, self.phi_tf, 2, 
-                              self.phi_disc, self.phi_b, 
-                              grad_term = q_td*phi_td/h_td,
-                              settling = self.beta*phi_td/h_td)
+        F_phi = self.phi_tf*grad(q_td*phi_td/h_cg_td)[0]*self.k*dx + \
+            x_N_td*self.phi_tf*self.beta*phi_td/h_td*self.k*dx
+        F_phi += transForm(phi, phi_td, self.phi_tf, 4, self.phi_disc, self.phi_b)
+
+        # VOLUME FRACTION PROJECTION
+        F_cg_phi = self.phi_cg_tf*phi_cg[0]*dx - self.phi_cg_tf*phi[0]*dx
+
+        F_phi = self.phi_tf*(phi[0] - phi[1])*dx 
 
         # DEPOSIT
-        F_phi_d =  createForm(phi_d, phi_d_td, self.phi_d_tf, 3, 
-                              self.phi_d_disc, self.phi_d_b,
-                              weak_b = [0.0, self.ds(1)],
-                              settling = -self.beta*phi_td/h_td)
+        F_phi_d = -1.0*x_N_td*self.phi_d_tf*self.beta*phi_td/h_td*self.k*dx 
+        F_phi_d += transForm(phi_d, phi_d_td, self.phi_d_tf, 6, self.phi_d_disc, self.phi_d_b)
+
+        # F_phi_d = self.phi_d_tf*(phi_d[0] - phi_d[1])*dx 
 
         # NOSE LOCATION AND SPEED
         if self.mms:
@@ -356,8 +317,16 @@ class Model():
         #     self.u_N_tf*u_N[0]*self.ds(1)
 
         # combine PDE's
-        self.F = F_q + F_h + F_phi + F_phi_d + F_x_N + F_u_N
+        self.F = F_q + F_cg_q + F_h + F_cg_h + F_phi + F_cg_phi + F_phi_d + F_x_N + F_u_N
         # self.F = F_h
+
+        # try:
+        #     print self.A - self.F
+        #     print 'done'
+        # except:
+        #     self.A = self.F
+
+        # print self.F
 
         # compute directional derivative about u in the direction of du (Jacobian)
         self.J = derivative(self.F, self.w[0], trial)
@@ -425,7 +394,7 @@ class Model():
 if __name__ == '__main__':
 
     model = Model()    
-    # model.plot = 0.05
+    model.plot = 0.05
     model.initialise_function_spaces()
     model.setup(zero_q = False)     
     model.solve(60.0) 

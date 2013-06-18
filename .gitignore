@@ -13,3 +13,7 @@
 *.stat
 *.png
 *.html
+
+# mms working files
+shallow_water/mms_test.py
+string

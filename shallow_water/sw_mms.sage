@@ -15,8 +15,9 @@ q_n = function(u_N*h_n, 1.0, 1.0, 0.0, 1.0, pi)
 grad_u = diff(q/h,x)
 phi_d = function(2.0, 1.2, 1.0, 0.0, 1.0)
 
-s_h = 1./pi*(x*u_N*diff(h,x) - diff(q,x))
 alpha = 1e-1*(2*q/h + (phi*h)**0.5)*h # u must always be positive and b*delta_x must be 1e-1
+
+s_h = 1./pi*(x*u_N*diff(h,x) - diff(q,x))
 s_q = 1./pi*(x*u_N*diff(q,x) - diff(q**2/h + 0.5*(phi*h), x))# + diff(alpha * diff(q/h, x), x))
 s_phi = 1./pi*(x*u_N*diff(phi, x) - diff(q*phi/h, x)) - phi/h
 s_phi_d = 1./pi*x*u_N*diff(phi_d, x) + phi/h
