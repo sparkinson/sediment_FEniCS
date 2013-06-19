@@ -22,7 +22,7 @@ parser.add_option('-t', '--adjoint_test',
                   action='store_true', dest='adjoint_test', default=False,
                   help='test adjoint solution')
 parser.add_option('-T', '--end_time',
-                  dest='T', type=float, default=0.5,
+                  dest='T', type=float, default=None,
                   help='simulation end time')
 parser.add_option('-p', '--plot',
                   dest='plot', action='store_true', default=False,
@@ -114,9 +114,61 @@ if job == 0:
 
     # time stepping
     model.timestep = model.dX_/500.0
-    model.adapt_timestep = False
+    model.adapt_timestep = True
     model.adapt_initial_timestep = False
-    model.cfl = Constant(0.2)
+    model.cfl = Constant(0.01)
+
+    # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
+    # model.q_b = Constant(0.2)
+    model.q_b = Constant(100.0)
+    model.h_b = Constant(100.0)
+    model.phi_b = Constant(100.0)
+    model.phi_d_b = Constant(100.0)
+
+    # # discretisation
+    # model.q_degree = 2
+    # model.h_degree = 1
+    # model.phi_degree = 1
+    # model.phi_d_degree = 1
+    # model.h_disc = "CG"
+    # model.phi_d_disc = "CG"
+
+    # discretisation
+    model.q_degree = 1
+    model.h_degree = 1
+    model.phi_degree = 1
+    model.phi_d_degree = 1
+    model.q_disc = "CG"
+    model.h_disc = "CG"
+    model.phi_disc = "CG"
+    model.phi_d_disc = "CG"
+    model.disc = [model.q_disc, model.h_disc, model.phi_disc, model.phi_d_disc]
+
+    model.initialise_function_spaces()
+    model.setup(zero_q = True)
+
+    T = 75.0
+    if (options.T): T = options.T
+    model.solve(T) 
+
+if job == 6:  
+
+    # SIMULAITON PARAMETERS
+
+    # mesh
+    model.dX_ = 1.0e-2
+    model.L_ = 1.0
+
+    # current properties
+    model.x_N_ = 0.5
+    model.Fr_ = 1.19
+    model.beta_ = 5e-3
+
+    # time stepping
+    model.timestep = model.dX_/500.0
+    model.adapt_timestep = True
+    model.adapt_initial_timestep = False
+    model.cfl = Constant(0.5)
 
     # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
     # model.q_b = Constant(0.2)
@@ -134,20 +186,89 @@ if job == 0:
     # model.phi_d_disc = "CG"
 
     # discretisation
-    model.q_degree = 2
-    model.h_degree = 2
-    model.phi_degree = 2
-    model.phi_d_degree = 2
+    model.q_degree = 1
+    model.h_degree = 1
+    model.phi_degree = 1
+    model.phi_d_degree = 1
     model.q_disc = "DG"
     model.h_disc = "DG"
     model.phi_disc = "DG"
     model.phi_d_disc = "DG"
+    model.disc = [model.q_disc, model.h_disc, model.phi_disc, model.phi_d_disc]
 
     model.initialise_function_spaces()
     model.setup(zero_q = True)
 
     T = 75.0
     if (options.T): T = options.T
+    model.solve(T) 
+
+if job == 7:  
+
+    # SIMULAITON PARAMETERS
+
+    # mesh
+    model.dX_ = 5.0e-3
+    model.L_ = 1.0
+
+    # current properties
+    model.Fr_ = 1.19
+    model.beta_ = 0.0
+
+    # time stepping
+    model.timestep = 5e-4 #model.dX_/500.0
+    model.adapt_timestep = False
+    model.adapt_initial_timestep = False
+    model.cfl = Constant(0.5)
+
+    # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
+    # model.q_b = Constant(0.2)
+    model.q_b = Constant(0.0)
+    model.h_b = Constant(0.0)
+    model.phi_b = Constant(0.0)
+    model.phi_d_b = Constant(0.0)
+
+    # # discretisation
+    # model.q_degree = 2
+    # model.h_degree = 1
+    # model.phi_degree = 1
+    # model.phi_d_degree = 1
+    # model.h_disc = "CG"
+    # model.phi_d_disc = "CG"
+
+    # discretisation
+    model.q_degree = 1
+    model.h_degree = 1
+    model.phi_degree = 1
+    model.phi_d_degree = 1
+    model.q_disc = "DG"
+    model.h_disc = "DG"
+    model.phi_disc = "DG"
+    model.phi_d_disc = "DG"
+    model.disc = [model.q_disc, model.h_disc, model.phi_disc, model.phi_d_disc]
+
+    model.initialise_function_spaces()
+
+    w_ic = project((Expression(
+                (
+                    '(2./3.)*K*pow(t,-1./3.)*x[0]*(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
+                    '(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
+                    '(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
+                    '0.0',
+                    'K*pow(t, (2./3.))',
+                    '(2./3.)*K*pow(t,-1./3.)',
+                    ),
+                K = ((27.0*model.Fr_**2.0)/(12.0 - 2.0*model.Fr_**2.0))**(1./3.),
+                Fr = model.Fr_,
+                t = 0.5,
+                element = model.W.ufl_element())), model.W)
+    
+    model.t = 0.5
+    model.setup(w_ic = w_ic, similarity = True)
+
+    T = 20.0
+    if (options.T): T = options.T
+
     model.solve(T) 
 
 elif job == 1:  

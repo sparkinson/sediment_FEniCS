@@ -11,12 +11,22 @@ mpl.rcParams['text.usetex']=True
 mpl.rcParams['text.latex.unicode']=True
 plt.rc('font',**{'family':'serif','serif':['cm']})
 
+def similarity_u(model, y):
+    K = (27*model.Fr_**2.0/(12-2*model.Fr_**2.0))**(1./3.)
+    return (2./3.)*K*model.t**(-1./3.)*y
+
+def similarity_h(model, y):
+    K = (27*model.Fr_**2.0/(12-2*model.Fr_**2.0))**(1./3.)
+    H0 = 1./model.Fr_**2.0 - 0.25 + 0.25*y**2.0
+    return (4./9.)*K**2.0*model.t**(-2./3.)*H0
+
 class Plotter():
 
-    def __init__(self, model, rescale, file):
+    def __init__(self, model, rescale, file, similarity = False):
 
         self.rescale = rescale
         self.save_loc = file
+        self.similarity = similarity
 
         if model.show_plot:
             plt.ion()
@@ -66,6 +76,13 @@ class Plotter():
         self.h_line, = self.h_plot.plot(x, h_int, 'r-')
         self.phi_line, = self.phi_plot.plot(x, phi_int, 'r-')
         self.phi_d_line, = self.phi_d_plot.plot(x, phi_d_int, 'r-')
+
+        if self.similarity:
+            similarity_x = np.linspace(0.0,(27*model.Fr_**2.0/(12-2*model.Fr_**2.0))**(1./3.)*model.t**(2./3.),1001)
+            self.q_line_2, = self.q_plot.plot(similarity_x, [similarity_u(model,y) for y in np.linspace(0.0,1.0,1001)], 'b-')
+            self.h_line_2, = self.h_plot.plot(similarity_x, [similarity_h(model,y) for y in np.linspace(0.0,1.0,1001)], 'b-')
+            self.phi_line_2, = self.phi_plot.plot(similarity_x, np.ones([1001]), 'b-')
+            self.phi_d_line_2, = self.phi_d_plot.plot(x, phi_d_int, 'b-')
 
         if self.rescale:
             self.h_y_lim = h_int.max()*1.1

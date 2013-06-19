@@ -27,8 +27,25 @@ solver_parameters["newton_solver"]["relaxation_parameter"] = 1.0
 # set_log_active(False)
 set_log_level(ERROR)
 
-############################################################
-# TIME DISCRETISATION FUNCTIONS
+# smooth functions (also never hit zero)
+def smooth_pos(val):
+    return (val + smooth_abs(val))/2.0
+def smooth_neg(val):
+    return (val - smooth_abs(val))/2.0
+def smooth_abs(val):
+    # smoothing eps value
+    eps = 1e-12
+    return (val**2.0 + eps)**0.5
+
+# time discretisations
+def explicit(object, u):
+    return u[1]
+def implicit(object, u):
+    return u[0]
+def runge_kutta(object, u):
+    return u[1]
+def crank_nicholson(object, u):
+    return 0.5*u[0] + 0.5*u[1]
 
 class Model():
     
@@ -48,7 +65,7 @@ class Model():
     timestep = dX_/10.0
     adapt_timestep = True
     adapt_initial_timestep = True
-    cfl = Constant(1.0)
+    cfl = Constant(0.2)
 
     # mms test (default False)
     mms = False
@@ -64,9 +81,6 @@ class Model():
     # save location
     save_loc = 'results/'
 
-    # smoothing eps value
-    eps = 1e-12
-
     # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
     q_b = Constant(0.0)
     h_b = Constant(0.0)
@@ -74,14 +88,17 @@ class Model():
     phi_d_b = Constant(0.0)
 
     # discretisation
-    q_degree = 2
-    h_degree = 2
-    phi_degree = 2
-    phi_d_degree = 2
+    q_degree = 1
+    h_degree = 1
+    phi_degree = 1
+    phi_d_degree = 1
     q_disc = "DG"
     h_disc = "DG"
     phi_disc = "DG"
     phi_d_disc = "DG"
+    disc = [q_disc, h_disc, phi_disc, phi_d_disc]
+    time_discretise = crank_nicholson #implicit #crank_nicholson
+    slope_limit = 'vb'
 
     def initialise_function_spaces(self):
 
@@ -116,6 +133,7 @@ class Model():
 
         # define test functions
         (self.q_tf, self.h_tf, self.phi_tf, self.phi_d_tf, self.x_N_tf, self.u_N_tf) = TestFunctions(self.W)
+        self.v = TestFunction(self.W)
 
         # initialise functions
         X_ = project(Expression('x[0]'), self.X_FS)
@@ -125,13 +143,10 @@ class Model():
 
     def setup(self, h_ic = None, phi_ic = None, 
               q_a = Constant(0.0), q_pa = Constant(0.0), q_pb = Constant(1.0), 
-              w_ic = None, zero_q = False):
+              w_ic = None, zero_q = False, similarity = False):
         # q_a between 0.0 and 1.0 
         # q_pa between 0.2 and 0.99 
         # q_pb between 1.0 and 
-
-        # set current time to 0.0
-        self.t = 0.0
 
         # define constants
         self.Fr = Constant(self.Fr_, name="Fr")
@@ -193,13 +208,13 @@ class Model():
         # define bc's
         bcphi_d = DirichletBC(self.W.sub(3), '0.0', "near(x[0], 1.0) && on_boundary")
         bcq = DirichletBC(self.W.sub(0), '0.0', "near(x[0], 0.0) && on_boundary")
-        self.bc = [bcq] #, bcphi_d]
+        self.bc = [bcq, bcphi_d]
 
         self.generate_form()
         
         # initialise plotting
         if self.plot:
-            self.plotter = sw_io.Plotter(self, rescale=True, file=self.save_loc)
+            self.plotter = sw_io.Plotter(self, rescale=True, file=self.save_loc, similarity = similarity)
             self.plot_t = self.plot
 
         # write ic's
@@ -221,22 +236,9 @@ class Model():
 
         # copy to w[1]
         self.w[1] = project(self.w[0], self.W)
-
-        # smooth functions (also never hit zero)
-        def smooth_pos(val):
-            return (val + smooth_abs(val))/2.0
-        def smooth_neg(val):
-            return (val - smooth_abs(val))/2.0
-        def smooth_abs(val):
-            return (val**2.0 + self.eps)**0.5
-
-        # time discretisation of values
-        def time_discretise(u):
-            if not self.mms:
-                # return 0.5*u[0] + 0.5*u[1]
-                return u[0]
-            else:
-                return u[0]
+        # copy to w[2] and w[3] - for intermedaite values in RK scheme
+        if self.time_discretise.im_func == runge_kutta:
+            self.w[2] = project(self.w[0], self.W)
 
         q = dict()
         h = dict()
@@ -258,23 +260,23 @@ class Model():
         else:
             self.k = Constant(self.timestep)
 
-        q_td = time_discretise(q)
-        # h_td = smooth_pos(time_discretise(h))
-        h_td = time_discretise(h)
-        h_td_p = smooth_pos(time_discretise(h))
-        phi_td = time_discretise(phi)
+        q_td = self.time_discretise(q)
+        # h_td = smooth_pos(self.time_discretise(h))
+        h_td = self.time_discretise(h)
+        h_td_p = smooth_pos(self.time_discretise(h))
+        phi_td = self.time_discretise(phi)
         phi_td_p = smooth_pos(phi_td)
-        phi_d_td = time_discretise(phi_d)
-        x_N_td = time_discretise(x_N)
+        phi_d_td = self.time_discretise(phi_d)
+        x_N_td = self.time_discretise(x_N)
         inv_x_N = 1./x_N_td
-        u_N_td = time_discretise(u_N)
+        u_N_td = self.time_discretise(u_N)
         ux = Constant(-1.0)*u_N_td*self.X
 
         uxn_up = smooth_pos(ux*self.n)
         uxn_down = smooth_neg(ux*self.n)
 
         # mass term, coordinate transformation, source, su and weak bc's
-        def createForm(u, u_td, v, index, disc, stab, weak_b = None, grad_term = None, settling = None, enable = True):
+        def createForm(u, u_td, v, index, disc, stab, weak_b = 0, grad_term = None, settling = None, enable = True):
 
             if enable:
             # coordinate transforming advection term
@@ -287,7 +289,11 @@ class Model():
 
                 # surface integrals for coordinate transforming advection term
                 F += avg(self.k)*jump(v)*(uxn_up('+')*u_td('+') - uxn_up('-')*u_td('-'))*dS 
-                F += self.k*v*ux_n*u_td*(self.ds(0) + self.ds(1))
+                if self.mms or not weak_b:
+                    F += self.k*v*ux_n*u_td*(self.ds(0) + self.ds(1))
+                else:
+                    for weak_b_ in weak_b:
+                        F += self.k*v*ux_n*weak_b_[0]*self.n*weak_b_[1]
 
                 # mass term
                 if not self.mms:
@@ -296,25 +302,29 @@ class Model():
                 if self.mms:
                     F += x_N_td*v*self.S[index]*self.k*dx
 
-                # bc
+                # mms bc
                 if self.mms:
                     F -= self.k*v*u_td*self.n*(self.ds(0) + self.ds(1))
                     F += self.k*v*self.w_ic[index]*self.n*(self.ds(0) + self.ds(1)) 
-                elif weak_b:
-                    for weak_b_ in weak_b:
-                        F -= self.k*v*u_td*self.n*weak_b_[1]
-                        F += self.k*v*weak_b_[0]*self.n*weak_b_[1]
+                if index == 0:
+                    F -= self.k*v*u_td*self.n*self.ds(0)
 
                 # stabilisation
                 if stab((0,0)) > 0.0:
-                    tau = Constant(stab)*self.dX/smooth_abs(ux)
-                    F += tau*ux*grad(v)[0]*ux*grad(u_td)[0]*self.k*dx - \
-                        tau*ux*self.n*v*ux*grad(u_td)[0]*self.k*(self.ds(0) + self.ds(1))
+                    if index > 0:
+                        tau = stab*self.dX/smooth_abs(ux)
+                        F += self.k*tau*ux*grad(v)[0]*ux*grad(u_td)[0]*dx - \
+                            self.k*tau*ux*v*ux*grad(u_td)[0]*self.n*(self.ds(0) + self.ds(1))
+                    else:
+                        u = q_td/h_td
+                        tau = stab*self.dX*(smooth_abs(u)+u+(phi_td_p*h_td_p)**0.5)*h_td
+                        F += self.k*grad(v)[0]*tau*grad(u)[0]*dx
+                        F -= self.k*v*tau*grad(u)[0]*self.n*(self.ds(0) + self.ds(1))                            
 
                 if grad_term:
                     F -= self.k*grad(v)[0]*grad_term*dx
-                    F += self.k*v*grad_term*self.n*(self.ds(0) + self.ds(1))
                     F += avg(self.k)*jump(v)*avg(grad_term)*self.n('+')*dS
+                    F += self.k*v*grad_term*self.n*(self.ds(0) + self.ds(1))
 
                 if settling:
                     F += self.k*x_N_td*v*settling*dx
@@ -326,7 +336,7 @@ class Model():
 
         # MOMENTUM 
         F_q =      createForm(q, q_td, self.q_tf, 0, 
-                              self.q_disc, Constant(0.0), 
+                              self.q_disc, self.q_b, 
                               weak_b = ([0.0, self.ds(0)], [u_N_td*h_td, self.ds(1)]),
                               grad_term = q_td**2.0/h_td + 0.5*phi_td*h_td)
 
@@ -344,7 +354,7 @@ class Model():
         # DEPOSIT
         F_phi_d =  createForm(phi_d, phi_d_td, self.phi_d_tf, 3, 
                               self.phi_d_disc, self.phi_d_b,
-                              weak_b = [[0.0, self.ds(1)]],
+                              weak_b = [[phi_d_td, self.ds(0)], [0.0, self.ds(1)]],
                               settling = -self.beta*phi_td/h_td)
 
         # NOSE LOCATION AND SPEED
@@ -359,7 +369,6 @@ class Model():
 
         # combine PDE's
         self.F = F_q + F_h + F_phi + F_phi_d + F_x_N + F_u_N
-        # self.F = F_h
 
         # compute directional derivative about u in the direction of du (Jacobian)
         self.J = derivative(self.F, self.w[0], trial)
@@ -389,9 +398,112 @@ class Model():
                 self.timestep = self.k.vector().array()[0]
             
             # SOLVE COUPLED EQUATIONS
-            # solve(self.F == 0, self.w[0], bcs=self.bc, solver_parameters=solver_parameters)
+            if self.time_discretise.im_func == runge_kutta:
+                # store previous solution
+                self.w[2].assign(self.w[1])
 
-            solve(self.F == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
+                # runge kutta timestep
+                solve(self.F == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
+
+                self.w[1].assign(self.w[0])
+                F_RK = -(3./4.)*inner(self.v, self.w[2])*dx + (1./4.)*self.F
+                solve(F_RK == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
+                
+                self.w[1].assign(self.w[0])
+                F_RK = -(1./3.)*inner(self.v, self.w[2])*dx + (2./3.)*self.F
+                solve(F_RK == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
+
+                # replace previous solution
+                self.w[1].assign(self.w[2])
+            else:
+                solve(self.F == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
+
+            if self.slope_limit:
+
+                # get array for variable
+                arr = self.w[0].vector().array()
+
+                q0, h0, phi0, phi_d0 = sw_io.map_to_arrays(self.w[0], self.map_dict)[:4] 
+
+                for a in range(4):
+
+                    if self.disc[a] == 'DG':
+
+                        # create storage arrays for max, min and mean values
+                        ele_dof = 2 # only for P1 DG elements (self.W.sub(a).dofmap().cell_dofs(0).shape[0])
+                        n_dof = ele_dof * len(self.mesh.cells())
+                        u_i_max = np.ones([n_dof]) * 1e-200
+                        u_i_min = np.ones([n_dof]) * 1e200
+                        u_c = np.empty([len(self.mesh.cells())])
+
+                        # for each vertex in the mesh store the min and max and mean values
+                        for b in range(len(self.mesh.cells())):
+
+                            # obtain u_c, u_min and u_max
+                            u_i = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b)])
+                            u_c[b] = u_i.mean()
+
+                            n1 = b*ele_dof
+                            u_i_max[n1:n1+1] = u_c[b]
+                            u_i_min[n1:n1+1] = u_c[b]
+                            if b > 0:
+                                u_j = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b - 1)])
+                                if self.slope_limit == 'vb':
+                                    u_i_max[n1] = max(u_i_max[n1], u_j.max())
+                                    u_i_min[n1] = min(u_i_min[n1], u_j.min())
+                                elif self.slope_limit == 'bj':
+                                    u_i_max[n1] = max(u_i_max[n1], u_j.mean())
+                                    u_i_min[n1] = min(u_i_min[n1], u_j.mean())
+                                else:
+                                    sys.exit('Can only do vertex-based (vb) or Barth-Jesperson (bj) slope limiting')
+                            else:
+                                u_i_max[n1] = max(u_i_max[n1], u_i[0])
+                                u_i_min[n1] = min(u_i_min[n1], u_i[0])
+                            if b + 1 < len(self.mesh.cells()):
+                                u_j = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b + 1)])
+                                if self.slope_limit == 'vb':
+                                    u_i_max[n1+1] = max(u_i_max[n1+1], u_j.max())
+                                    u_i_min[n1+1] = min(u_i_min[n1+1], u_j.min())
+                                elif self.slope_limit == 'bj':
+                                    u_i_max[n1+1] = max(u_i_max[n1+1], u_j.mean())
+                                    u_i_min[n1+1] = min(u_i_min[n1+1], u_j.mean())
+                                else:
+                                    sys.exit('Can only do vertex-based (vb) or Barth-Jesperson (bj) slope limiting')
+                            else:
+                                u_i_max[n1+1] = max(u_i_max[n1+1], u_i[-1])
+                                u_i_min[n1+1] = min(u_i_min[n1+1], u_i[-1])
+
+                        for b in range(len(self.mesh.cells())):
+
+                            # calculate alpha
+                            u_i = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b)])
+                            alpha = 1.0
+                            n1 = b*ele_dof
+                            for c in range(ele_dof):
+                                if u_i[c] - u_c[b] > 0:
+                                    alpha = min(alpha, (u_i_max[n1+c] - u_c[b])/(u_i[c] - u_c[b]))
+                                if u_i[c] - u_c[b] < 0:
+                                    alpha = min(alpha, (u_i_min[n1+c] - u_c[b])/(u_i[c] - u_c[b]))
+
+                            # apply slope limiting
+                            slope = u_i - u_c[b]
+                            indices = self.W.sub(a).dofmap().cell_dofs(b)
+                            for c in range(ele_dof):
+                                arr[indices[c]] = u_c[b] + alpha*slope[c]
+                            
+                # put array back into w[0]
+                self.w[0].vector()[:] = arr
+
+                q1, h1, phi1, phi_d1 = sw_io.map_to_arrays(self.w[0], self.map_dict)[:4]
+                print np.abs((q1-q0)).max(), np.abs((h1-h0)).max(), np.abs((phi1-phi0)).max(), np.abs((phi_d1-phi_d0)).max()
+                # if any(np.abs(q1-q0) > 0.0):
+                #     print q1-q0
+                # if any(np.abs(h1-h0) > 0.0):
+                #     print h1-h0
+                # if any(np.abs(phi1-phi0) > 0.0):
+                #     print phi1-phi0
+                # if any(np.abs(phi_d1-phi_d0) > 0.0):
+                #     print phi_d1-phi_d0
             
             if tol:
                 delta = 0.0
@@ -427,7 +539,7 @@ class Model():
 if __name__ == '__main__':
 
     model = Model()    
-    model.plot = 0.00001
+    model.plot = 0.5
     model.initialise_function_spaces()
     model.setup(zero_q = False)     
     model.solve(60.0) 

@@ -9,7 +9,7 @@ import numpy as np
 import sys
 
 class MMS_Model(sw.Model):
-    def setup(self, dX, dT):
+    def setup(self, dX, dT, disc):
         self.mms = True
 
         # define constants
@@ -28,15 +28,15 @@ class MMS_Model(sw.Model):
         self.phi_b = Constant(0.0)
         self.phi_d_b = Constant(0.0)
 
-        self.q_degree = 2
-        self.h_degree = 2
-        self.phi_degree = 2
-        self.phi_d_degree = 2
+        self.q_degree = 1
+        self.h_degree = 1
+        self.phi_degree = 1
+        self.phi_d_degree = 1
 
-        self.q_disc = 'DG'
-        self.h_disc = 'DG'
-        self.phi_disc = 'DG'
-        self.phi_d_disc = 'DG'
+        self.q_disc = disc
+        self.h_disc = disc
+        self.phi_disc = disc
+        self.phi_d_disc = disc
         
         self.initialise_function_spaces()
 
@@ -101,12 +101,15 @@ def mms_test(plot, show, save):
 
         return Eh, Ephi, Eq, Ephi_d 
 
-    set_log_level(PROGRESS)    
+    set_log_level(ERROR)    
 
     model = MMS_Model() 
     model.plot = plot
     model.show_plot = show
     model.save_plot = save
+
+    disc = 'CG'
+    print disc
     
     h = [] # element sizes
     E = [] # errors
@@ -114,7 +117,7 @@ def mms_test(plot, show, save):
         h.append(pi/nx)
         print 'h is: ', h[-1]
         model.save_loc = 'results/{}'.format(h[-1])
-        model.setup(h[-1], 1.0)
+        model.setup(h[-1], 1.0, disc)
         model.solve(T = 0.1)
         E.append(getError(model))
 
@@ -128,26 +131,26 @@ def mms_test(plot, show, save):
         print ( "h=%10.2E rh=%.2f rphi=%.2f rq=%.2f rphi_d=%.2f Eh=%.2e Ephi=%.2e Eq=%.2e Ephi_d=%.2e" 
                     % (h[i], rh, rphi, rq, rphi_d, E[i][0], E[i][1], E[i][2], E[i][3]) )    
 
-    # disc = 'DG'
-    # print disc
+    disc = 'DG'
+    print disc
     
-    # h = [] # element sizes
-    # E = [] # errors
-    # for i, nx in enumerate([48, 96, 192]):
-    #     dT = (pi/nx) * 1.0
-    #     h.append(pi/nx)
-    #     print 'dt is: ', dT, '; h is: ', h[-1]
-    #     model.setup(h[-1], dT, disc)
-    #     model.solve(tol = dT/50.0)
-    #     E.append(getError(model))
+    h = [] # element sizes
+    E = [] # errors
+    for i, nx in enumerate([3, 6, 12, 24, 48, 96, 192]):
+        dT = (pi/nx) * 1.0
+        h.append(pi/nx)
+        print 'dt is: ', dT, '; h is: ', h[-1]
+        model.setup(h[-1], 1.0, disc)
+        model.solve(T = 0.1)
+        E.append(getError(model))
 
-    # for i in range(1, len(E)):
-    #     rh = np.log(E[i][0]/E[i-1][0])/np.log(h[i]/h[i-1])
-    #     rphi = np.log(E[i][1]/E[i-1][1])/np.log(h[i]/h[i-1])
-    #     rq = np.log(E[i][2]/E[i-1][2])/np.log(h[i]/h[i-1])
-    #     rphi_d = np.log(E[i][3]/E[i-1][3])/np.log(h[i]/h[i-1])
-    #     print ( "h=%10.2E rh=%.2f rphi=%.2f rq=%.2f rphi_d=%.2f Eh=%.2e Ephi=%.2e Eq=%.2e Ephi_d=%.2e" 
-    #                 % (h[i], rh, rphi, rq, rphi_d, E[i][0], E[i][1], E[i][2], E[i][3]) )
+    for i in range(1, len(E)):
+        rh = np.log(E[i][0]/E[i-1][0])/np.log(h[i]/h[i-1])
+        rphi = np.log(E[i][1]/E[i-1][1])/np.log(h[i]/h[i-1])
+        rq = np.log(E[i][2]/E[i-1][2])/np.log(h[i]/h[i-1])
+        rphi_d = np.log(E[i][3]/E[i-1][3])/np.log(h[i]/h[i-1])
+        print ( "h=%10.2E rh=%.2f rphi=%.2f rq=%.2f rphi_d=%.2f Eh=%.2e Ephi=%.2e Eq=%.2e Ephi_d=%.2e" 
+                    % (h[i], rh, rphi, rq, rphi_d, E[i][0], E[i][1], E[i][2], E[i][3]) )
 
 def taylor_tester(plot, show, save):
 
