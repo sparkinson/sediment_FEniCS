@@ -247,8 +247,14 @@ if job == 7:
     model.phi_d_disc = "DG"
     model.disc = [model.q_disc, model.h_disc, model.phi_disc, model.phi_d_disc]
 
-    T = 10.0
-    if (options.T): T = options.T
+    w_ic_e = [
+        '(2./3.)*K*pow(t,-1./3.)*x[0]*(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
+        '(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
+        '(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
+        '0.0',
+        'K*pow(t, (2./3.))',
+        '(2./3.)*K*pow(t,-1./3.)'
+        ]
 
     def getError(model):
         Fq = FunctionSpace(model.mesh, model.q_disc, model.q_degree + 2)
@@ -284,58 +290,57 @@ if job == 7:
 
         return E_q, E_h, E_phi, 0.0, E_x_N, E_u_N
     
-    dX = []
+    T = 0.6
+    if (options.T): T = options.T
+
+    dt = [1e-1, 1e-1/2, 1e-1/4, 1e-1/8, 1e-1/16, 1e-1/32, 1e-1/64, 1e-1/128, 1e-1/256]
+    dX = [1.0/4, 1.0/8, 1.0/16, 1.0/32, 1.0/64]
     E = []
-    for nx in [4, 8, 16, 32, 64]: #[25, 50, 100, 200]:
-        model.dX_ = 1.0/16 #nx
-        dX.append(1.0/nx)
-        model.t = 0.5
-        model.timestep = 5e-1*4/nx #5e-4*200/32 #nx
+    for dt_ in dt:
+        E.append([])
+        for dX_ in dX:
 
-        model.initialise_function_spaces()
+            print dX_, dt_
 
-        w_ic_e = [
-            '(2./3.)*K*pow(t,-1./3.)*x[0]*(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
-            '(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
-            '(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
-            '0.0',
-            'K*pow(t, (2./3.))',
-            '(2./3.)*K*pow(t,-1./3.)'
-            ]
+            model.dX_ = dX_
+            model.timestep = dt_
 
-        w_ic_E = Expression(
-            (
-                w_ic_e[0], 
-                w_ic_e[1], 
-                w_ic_e[2], 
-                w_ic_e[3], 
-                w_ic_e[4], 
-                w_ic_e[5], 
-                ),
-            K = ((27.0*model.Fr_**2.0)/(12.0 - 2.0*model.Fr_**2.0))**(1./3.),
-            Fr = model.Fr_,
-            t = model.t,
-            element = model.W.ufl_element(),
-            degree = 5)
-                         
-        w_ic = project(w_ic_E, model.W)
+            model.t = 0.5
+            model.initialise_function_spaces()
 
-        model.setup(w_ic = w_ic, similarity = True)
-        
-        model.error_callback = getError
-        E.append(model.solve(T))
+            w_ic_E = Expression(
+                (
+                    w_ic_e[0], 
+                    w_ic_e[1], 
+                    w_ic_e[2], 
+                    w_ic_e[3], 
+                    w_ic_e[4], 
+                    w_ic_e[5], 
+                    ),
+                K = ((27.0*model.Fr_**2.0)/(12.0 - 2.0*model.Fr_**2.0))**(1./3.),
+                Fr = model.Fr_,
+                t = model.t,
+                element = model.W.ufl_element(),
+                degree = 5)
 
-    print ( "R = 0.00  0.00  0.00  0.00  0.00 E = %.2e %.2e %.2e %.2e %.2e" 
-            % (E[0][0], E[0][1], E[0][2], E[0][4], E[0][5]) ) 
-    for i in range(1, len(E)):
-        rh = np.log(E[i][0]/E[i-1][0])/np.log(dX[i]/dX[i-1])
-        rphi = np.log(E[i][1]/E[i-1][1])/np.log(dX[i]/dX[i-1])
-        rq = np.log(E[i][2]/E[i-1][2])/np.log(dX[i]/dX[i-1])
-        rx = np.log(E[i][4]/E[i-1][4])/np.log(dX[i]/dX[i-1])
-        ru = np.log(E[i][5]/E[i-1][5])/np.log(dX[i]/dX[i-1])
-        print ( "R = %-5.2f %-5.2f %-5.2f %-5.2f %-5.2f E = %.2e %.2e %.2e %.2e %.2e"
-                % (rh, rphi, rq, rx, ru, E[i][0], E[i][1], E[i][2], 
-                   E[i][4], E[i][5]) )
+            w_ic = project(w_ic_E, model.W)
+            model.setup(w_ic = w_ic, similarity = True)
+            model.error_callback = getError
+            E[-1].append(model.solve(T))
+
+    sw_io.write_array_to_file('similarity_convergence.json', E, 'w')
+
+    # print ( "R = 0.00  0.00  0.00  0.00  0.00 E = %.2e %.2e %.2e %.2e %.2e" 
+    #         % (E[0][0], E[0][1], E[0][2], E[0][4], E[0][5]) ) 
+    # for i in range(1, len(E)):
+    #     rh = np.log(E[i][0]/E[i-1][0])/np.log(dX[i]/dX[i-1])
+    #     rphi = np.log(E[i][1]/E[i-1][1])/np.log(dX[i]/dX[i-1])
+    #     rq = np.log(E[i][2]/E[i-1][2])/np.log(dX[i]/dX[i-1])
+    #     rx = np.log(E[i][4]/E[i-1][4])/np.log(dX[i]/dX[i-1])
+    #     ru = np.log(E[i][5]/E[i-1][5])/np.log(dX[i]/dX[i-1])
+    #     print ( "R = %-5.2f %-5.2f %-5.2f %-5.2f %-5.2f E = %.2e %.2e %.2e %.2e %.2e"
+    #             % (rh, rphi, rq, rx, ru, E[i][0], E[i][1], E[i][2], 
+    #                E[i][4], E[i][5]) )
 
 elif job == 1:  
 

@@ -97,7 +97,7 @@ class Model():
     phi_disc = "DG"
     phi_d_disc = "DG"
     disc = [q_disc, h_disc, phi_disc, phi_d_disc]
-    time_discretise = implicit #crank_nicholson #implicit #crank_nicholson
+    time_discretise = crank_nicholson #implicit #crank_nicholson
     slope_limiter = 'vb'
 
     # error calculation
