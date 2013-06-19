@@ -247,29 +247,95 @@ if job == 7:
     model.phi_d_disc = "DG"
     model.disc = [model.q_disc, model.h_disc, model.phi_disc, model.phi_d_disc]
 
-    model.initialise_function_spaces()
-
-    w_ic = project((Expression(
-                (
-                    '(2./3.)*K*pow(t,-1./3.)*x[0]*(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
-                    '(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
-                    '(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
-                    '0.0',
-                    'K*pow(t, (2./3.))',
-                    '(2./3.)*K*pow(t,-1./3.)',
-                    ),
-                K = ((27.0*model.Fr_**2.0)/(12.0 - 2.0*model.Fr_**2.0))**(1./3.),
-                Fr = model.Fr_,
-                t = 0.5,
-                element = model.W.ufl_element())), model.W)
-    
-    model.t = 0.5
-    model.setup(w_ic = w_ic, similarity = True)
-
-    T = 20.0
+    T = 10.0
     if (options.T): T = options.T
 
-    model.solve(T) 
+    def getError(model):
+        Fq = FunctionSpace(model.mesh, model.q_disc, model.q_degree + 2)
+        Fh = FunctionSpace(model.mesh, model.h_disc, model.h_degree + 2)
+        Fphi = FunctionSpace(model.mesh, model.phi_disc, model.phi_degree + 2)
+        Fphi_d = FunctionSpace(model.mesh, model.phi_d_disc, model.phi_d_degree + 2)
+
+        S_q = project(Expression(w_ic_e[0], 
+                                 K = ((27.0*model.Fr_**2.0)/(12.0 - 2.0*model.Fr_**2.0))**(1./3.),
+                                 Fr = model.Fr_,
+                                 t = model.t, degree=5), 
+                      Fq)
+        S_h = project(Expression(w_ic_e[1], 
+                                 K = ((27.0*model.Fr_**2.0)/(12.0 - 2.0*model.Fr_**2.0))**(1./3.),
+                                 Fr = model.Fr_,
+                                 t = model.t, degree=5), 
+                      Fh)
+        S_phi = project(Expression(w_ic_e[2], 
+                                   K = ((27.0*model.Fr_**2.0)/(12.0 - 2.0*model.Fr_**2.0))**(1./3.),
+                                   Fr = model.Fr_,
+                                   t = model.t, degree=5), 
+                        Fphi)
+
+        q, h, phi, phi_d, x_N, u_N = model.w[0].split()
+        E_q = errornorm(q, S_q, norm_type="L2", degree_rise=2)
+        E_h = errornorm(h, S_h, norm_type="L2", degree_rise=2)
+        E_phi = errornorm(phi, S_phi, norm_type="L2", degree_rise=2)
+
+        E_x_N = abs(model.w[0].vector().array()[model.map_dict[4][0]] - 
+                    ((27.0*model.Fr_**2.0)/(12.0 - 2.0*model.Fr_**2.0))**(1./3.)*model.t**(2./3.))
+        E_u_N = abs(model.w[0].vector().array()[model.map_dict[5][0]] -
+                    (2./3.)*((27.0*model.Fr_**2.0)/(12.0 - 2.0*model.Fr_**2.0))**(1./3.)*model.t**(-1./3.))
+
+        return E_q, E_h, E_phi, 0.0, E_x_N, E_u_N
+    
+    dX = []
+    E = []
+    for nx in [4, 8, 16, 32, 64]: #[25, 50, 100, 200]:
+        model.dX_ = 1.0/16 #nx
+        dX.append(1.0/nx)
+        model.t = 0.5
+        model.timestep = 5e-1*4/nx #5e-4*200/32 #nx
+
+        model.initialise_function_spaces()
+
+        w_ic_e = [
+            '(2./3.)*K*pow(t,-1./3.)*x[0]*(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
+            '(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
+            '(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
+            '0.0',
+            'K*pow(t, (2./3.))',
+            '(2./3.)*K*pow(t,-1./3.)'
+            ]
+
+        w_ic_E = Expression(
+            (
+                w_ic_e[0], 
+                w_ic_e[1], 
+                w_ic_e[2], 
+                w_ic_e[3], 
+                w_ic_e[4], 
+                w_ic_e[5], 
+                ),
+            K = ((27.0*model.Fr_**2.0)/(12.0 - 2.0*model.Fr_**2.0))**(1./3.),
+            Fr = model.Fr_,
+            t = model.t,
+            element = model.W.ufl_element(),
+            degree = 5)
+                         
+        w_ic = project(w_ic_E, model.W)
+
+        model.setup(w_ic = w_ic, similarity = True)
+        
+        model.error_callback = getError
+        E.append(model.solve(T))
+
+    print ( "R = 0.00  0.00  0.00  0.00  0.00 E = %.2e %.2e %.2e %.2e %.2e" 
+            % (E[0][0], E[0][1], E[0][2], E[0][4], E[0][5]) ) 
+    for i in range(1, len(E)):
+        rh = np.log(E[i][0]/E[i-1][0])/np.log(dX[i]/dX[i-1])
+        rphi = np.log(E[i][1]/E[i-1][1])/np.log(dX[i]/dX[i-1])
+        rq = np.log(E[i][2]/E[i-1][2])/np.log(dX[i]/dX[i-1])
+        rx = np.log(E[i][4]/E[i-1][4])/np.log(dX[i]/dX[i-1])
+        ru = np.log(E[i][5]/E[i-1][5])/np.log(dX[i]/dX[i-1])
+        print ( "R = %-5.2f %-5.2f %-5.2f %-5.2f %-5.2f E = %.2e %.2e %.2e %.2e %.2e"
+                % (rh, rphi, rq, rx, ru, E[i][0], E[i][1], E[i][2], 
+                   E[i][4], E[i][5]) )
 
 elif job == 1:  
 

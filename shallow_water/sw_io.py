@@ -38,7 +38,7 @@ class Plotter():
         self.phi_y_lim = phi.max()*1.10
         
         x = np.linspace(0.0, x_N[0], 10001)
-        self.fig = plt.figure(figsize=(6, 4), dpi=100)
+        self.fig = plt.figure(figsize=(12, 12), dpi=100)
         self.q_plot = self.fig.add_subplot(411)
         self.h_plot = self.fig.add_subplot(412)
         self.phi_plot = self.fig.add_subplot(413)
@@ -79,10 +79,10 @@ class Plotter():
 
         if self.similarity:
             similarity_x = np.linspace(0.0,(27*model.Fr_**2.0/(12-2*model.Fr_**2.0))**(1./3.)*model.t**(2./3.),1001)
-            self.q_line_2, = self.q_plot.plot(similarity_x, [similarity_u(model,y) for y in np.linspace(0.0,1.0,1001)], 'b-')
-            self.h_line_2, = self.h_plot.plot(similarity_x, [similarity_h(model,y) for y in np.linspace(0.0,1.0,1001)], 'b-')
-            self.phi_line_2, = self.phi_plot.plot(similarity_x, np.ones([1001]), 'b-')
-            self.phi_d_line_2, = self.phi_d_plot.plot(x, phi_d_int, 'b-')
+            self.q_line_2, = self.q_plot.plot(similarity_x, [similarity_u(model,y) for y in np.linspace(0.0,1.0,1001)], 'k--')
+            self.h_line_2, = self.h_plot.plot(similarity_x, [similarity_h(model,y) for y in np.linspace(0.0,1.0,1001)], 'k--')
+            self.phi_line_2, = self.phi_plot.plot(similarity_x, np.ones([1001]), 'k--')
+            self.phi_d_line_2, = self.phi_d_plot.plot(x, phi_d_int, 'k--')
 
         if self.rescale:
             self.h_y_lim = h_int.max()*1.1

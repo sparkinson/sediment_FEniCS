@@ -97,8 +97,11 @@ class Model():
     phi_disc = "DG"
     phi_d_disc = "DG"
     disc = [q_disc, h_disc, phi_disc, phi_d_disc]
-    time_discretise = crank_nicholson #implicit #crank_nicholson
-    slope_limit = 'vb'
+    time_discretise = implicit #crank_nicholson #implicit #crank_nicholson
+    slope_limiter = 'vb'
+
+    # error calculation
+    error_callback = None
 
     def initialise_function_spaces(self):
 
@@ -418,93 +421,9 @@ class Model():
             else:
                 solve(self.F == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
 
-            if self.slope_limit:
-
-                # get array for variable
-                arr = self.w[0].vector().array()
-
-                q0, h0, phi0, phi_d0 = sw_io.map_to_arrays(self.w[0], self.map_dict)[:4] 
-
-                for a in range(4):
-
-                    if self.disc[a] == 'DG':
-
-                        # create storage arrays for max, min and mean values
-                        ele_dof = 2 # only for P1 DG elements (self.W.sub(a).dofmap().cell_dofs(0).shape[0])
-                        n_dof = ele_dof * len(self.mesh.cells())
-                        u_i_max = np.ones([n_dof]) * 1e-200
-                        u_i_min = np.ones([n_dof]) * 1e200
-                        u_c = np.empty([len(self.mesh.cells())])
-
-                        # for each vertex in the mesh store the min and max and mean values
-                        for b in range(len(self.mesh.cells())):
-
-                            # obtain u_c, u_min and u_max
-                            u_i = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b)])
-                            u_c[b] = u_i.mean()
-
-                            n1 = b*ele_dof
-                            u_i_max[n1:n1+1] = u_c[b]
-                            u_i_min[n1:n1+1] = u_c[b]
-                            if b > 0:
-                                u_j = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b - 1)])
-                                if self.slope_limit == 'vb':
-                                    u_i_max[n1] = max(u_i_max[n1], u_j.max())
-                                    u_i_min[n1] = min(u_i_min[n1], u_j.min())
-                                elif self.slope_limit == 'bj':
-                                    u_i_max[n1] = max(u_i_max[n1], u_j.mean())
-                                    u_i_min[n1] = min(u_i_min[n1], u_j.mean())
-                                else:
-                                    sys.exit('Can only do vertex-based (vb) or Barth-Jesperson (bj) slope limiting')
-                            else:
-                                u_i_max[n1] = max(u_i_max[n1], u_i[0])
-                                u_i_min[n1] = min(u_i_min[n1], u_i[0])
-                            if b + 1 < len(self.mesh.cells()):
-                                u_j = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b + 1)])
-                                if self.slope_limit == 'vb':
-                                    u_i_max[n1+1] = max(u_i_max[n1+1], u_j.max())
-                                    u_i_min[n1+1] = min(u_i_min[n1+1], u_j.min())
-                                elif self.slope_limit == 'bj':
-                                    u_i_max[n1+1] = max(u_i_max[n1+1], u_j.mean())
-                                    u_i_min[n1+1] = min(u_i_min[n1+1], u_j.mean())
-                                else:
-                                    sys.exit('Can only do vertex-based (vb) or Barth-Jesperson (bj) slope limiting')
-                            else:
-                                u_i_max[n1+1] = max(u_i_max[n1+1], u_i[-1])
-                                u_i_min[n1+1] = min(u_i_min[n1+1], u_i[-1])
-
-                        for b in range(len(self.mesh.cells())):
-
-                            # calculate alpha
-                            u_i = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b)])
-                            alpha = 1.0
-                            n1 = b*ele_dof
-                            for c in range(ele_dof):
-                                if u_i[c] - u_c[b] > 0:
-                                    alpha = min(alpha, (u_i_max[n1+c] - u_c[b])/(u_i[c] - u_c[b]))
-                                if u_i[c] - u_c[b] < 0:
-                                    alpha = min(alpha, (u_i_min[n1+c] - u_c[b])/(u_i[c] - u_c[b]))
-
-                            # apply slope limiting
-                            slope = u_i - u_c[b]
-                            indices = self.W.sub(a).dofmap().cell_dofs(b)
-                            for c in range(ele_dof):
-                                arr[indices[c]] = u_c[b] + alpha*slope[c]
+            if self.slope_limiter:
+                self.slope_limit()
                             
-                # put array back into w[0]
-                self.w[0].vector()[:] = arr
-
-                q1, h1, phi1, phi_d1 = sw_io.map_to_arrays(self.w[0], self.map_dict)[:4]
-                print np.abs((q1-q0)).max(), np.abs((h1-h0)).max(), np.abs((phi1-phi0)).max(), np.abs((phi_d1-phi_d0)).max()
-                # if any(np.abs(q1-q0) > 0.0):
-                #     print q1-q0
-                # if any(np.abs(h1-h0) > 0.0):
-                #     print h1-h0
-                # if any(np.abs(phi1-phi0) > 0.0):
-                #     print phi1-phi0
-                # if any(np.abs(phi_d1-phi_d0) > 0.0):
-                #     print phi_d1-phi_d0
-            
             if tol:
                 delta = 0.0
                 f_list = [[self.w[0].split()[i], self.w[1].split()[i]] for i in range(len(self.w[0].split()))]
@@ -535,6 +454,90 @@ class Model():
 
         if self.plot:
             self.plotter.clean_up()
+
+        # error calc callback
+        if self.error_callback:
+            return self.error_callback(self)
+
+    def slope_limit(self):
+
+        # get array for variable
+        arr = self.w[0].vector().array()
+
+        q0, h0, phi0, phi_d0 = sw_io.map_to_arrays(self.w[0], self.map_dict)[:4] 
+
+        for a in range(4):
+
+            if self.disc[a] == 'DG':
+
+                # create storage arrays for max, min and mean values
+                ele_dof = 2 # only for P1 DG elements (self.W.sub(a).dofmap().cell_dofs(0).shape[0])
+                n_dof = ele_dof * len(self.mesh.cells())
+                u_i_max = np.ones([n_dof]) * 1e-200
+                u_i_min = np.ones([n_dof]) * 1e200
+                u_c = np.empty([len(self.mesh.cells())])
+
+                # for each vertex in the mesh store the min and max and mean values
+                for b in range(len(self.mesh.cells())):
+
+                    # obtain u_c, u_min and u_max
+                    u_i = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b)])
+                    u_c[b] = u_i.mean()
+
+                    n1 = b*ele_dof
+                    u_i_max[n1:n1+1] = u_c[b]
+                    u_i_min[n1:n1+1] = u_c[b]
+                    if b > 0:
+                        u_j = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b - 1)])
+                        if self.slope_limiter == 'vb':
+                            u_i_max[n1] = max(u_i_max[n1], u_j.max())
+                            u_i_min[n1] = min(u_i_min[n1], u_j.min())
+                        elif self.slope_limiter == 'bj':
+                            u_i_max[n1] = max(u_i_max[n1], u_j.mean())
+                            u_i_min[n1] = min(u_i_min[n1], u_j.mean())
+                        else:
+                            sys.exit('Can only do vertex-based (vb) or Barth-Jesperson (bj) slope limiting')
+                    else:
+                        u_i_max[n1] = max(u_i_max[n1], u_i[0])
+                        u_i_min[n1] = min(u_i_min[n1], u_i[0])
+                    if b + 1 < len(self.mesh.cells()):
+                        u_j = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b + 1)])
+                        if self.slope_limiter == 'vb':
+                            u_i_max[n1+1] = max(u_i_max[n1+1], u_j.max())
+                            u_i_min[n1+1] = min(u_i_min[n1+1], u_j.min())
+                        elif self.slope_limiter == 'bj':
+                            u_i_max[n1+1] = max(u_i_max[n1+1], u_j.mean())
+                            u_i_min[n1+1] = min(u_i_min[n1+1], u_j.mean())
+                        else:
+                            sys.exit('Can only do vertex-based (vb) or Barth-Jesperson (bj) slope limiting')
+                    else:
+                        u_i_max[n1+1] = max(u_i_max[n1+1], u_i[-1])
+                        u_i_min[n1+1] = min(u_i_min[n1+1], u_i[-1])
+
+                for b in range(len(self.mesh.cells())):
+
+                    # calculate alpha
+                    u_i = np.array([arr[index] for index in self.W.sub(a).dofmap().cell_dofs(b)])
+                    alpha = 1.0
+                    n1 = b*ele_dof
+                    for c in range(ele_dof):
+                        if u_i[c] - u_c[b] > 0:
+                            alpha = min(alpha, (u_i_max[n1+c] - u_c[b])/(u_i[c] - u_c[b]))
+                        if u_i[c] - u_c[b] < 0:
+                            alpha = min(alpha, (u_i_min[n1+c] - u_c[b])/(u_i[c] - u_c[b]))
+
+                    # apply slope limiting
+                    slope = u_i - u_c[b]
+                    indices = self.W.sub(a).dofmap().cell_dofs(b)
+                    for c in range(ele_dof):
+                        arr[indices[c]] = u_c[b] + alpha*slope[c]
+
+        # put array back into w[0]
+        self.w[0].vector()[:] = arr
+
+        q1, h1, phi1, phi_d1 = sw_io.map_to_arrays(self.w[0], self.map_dict)[:4]
+        print np.abs((q1-q0)).max(), np.abs((h1-h0)).max(), np.abs((phi1-phi0)).max(), np.abs((phi_d1-phi_d0)).max()
+
 
 if __name__ == '__main__':
 
