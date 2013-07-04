@@ -15,7 +15,6 @@ class MMS_Model(sw.Model):
         # define constants
         self.dX_ = dX
         self.L_ = np.pi
-        self.q_b = Constant(1e-1 / dX)
         self.Fr_ = 1.0
         self.Fr = Constant(1.0)
         self.beta_ = 1.0
@@ -24,6 +23,7 @@ class MMS_Model(sw.Model):
         # reset time
         self.t = 0.0
 
+        self.q_b = Constant(0.0) #1e-1 / dX)
         self.h_b = Constant(0.0)
         self.phi_b = Constant(0.0)
         self.phi_d_b = Constant(0.0)
@@ -117,8 +117,8 @@ def mms_test(plot, show, save):
         h.append(pi/nx)
         print 'h is: ', h[-1]
         model.save_loc = 'results/{}'.format(h[-1])
-        model.setup(h[-1], 1.0, disc)
-        model.solve(T = 0.1)
+        model.setup(h[-1], 2.0, disc)
+        model.solve(T = 1.0)
         E.append(getError(model))
 
     print ( "h=%10.2E rh=0.00 rphi=0.00 rq=0.00 rphi_d=0.00 Eh=%.2e Ephi=%.2e Eq=%.2e Ephi_d=%.2e" 
@@ -144,6 +144,8 @@ def mms_test(plot, show, save):
         model.solve(T = 0.1)
         E.append(getError(model))
 
+    print ( "h=%10.2E rh=0.00 rphi=0.00 rq=0.00 rphi_d=0.00 Eh=%.2e Ephi=%.2e Eq=%.2e Ephi_d=%.2e" 
+            % (h[0], E[0][0], E[0][1], E[0][2], E[0][3]) ) 
     for i in range(1, len(E)):
         rh = np.log(E[i][0]/E[i-1][0])/np.log(h[i]/h[i-1])
         rphi = np.log(E[i][1]/E[i-1][1])/np.log(h[i]/h[i-1])

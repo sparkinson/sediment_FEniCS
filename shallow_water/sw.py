@@ -8,6 +8,7 @@ import numpy as np
 from optparse import OptionParser
 import json
 import sw_io
+import scipy
 
 ############################################################
 # DOLFIN SETTINGS
@@ -25,7 +26,7 @@ solver_parameters["newton_solver"]["maximum_iterations"] = 15
 solver_parameters["newton_solver"]["relaxation_parameter"] = 1.0
 # info(parameters, True)
 # set_log_active(False)
-set_log_level(ERROR)
+set_log_level(PROGRESS)
 
 # smooth functions (also never hit zero)
 def smooth_pos(val):
@@ -62,8 +63,8 @@ class Model():
 
     # time stepping
     t = 0.0
-    timestep = dX_/10.0
-    adapt_timestep = True
+    timestep = dX_/100.0
+    adapt_timestep = False
     adapt_initial_timestep = True
     cfl = Constant(0.2)
 
@@ -301,6 +302,7 @@ class Model():
                 # mass term
                 if not self.mms:
                     F += x_N_td*v*(u[0] - u[1])*dx
+                # F += x_N_td*v*(u[0] - u[1])*dx
                 # source term
                 if self.mms:
                     F += x_N_td*v*self.S[index]*self.k*dx
@@ -309,10 +311,10 @@ class Model():
                 if self.mms:
                     F -= self.k*v*u_td*self.n*(self.ds(0) + self.ds(1))
                     F += self.k*v*self.w_ic[index]*self.n*(self.ds(0) + self.ds(1)) 
-                if index == 0:
+                if index == 0 and not self.mms:
                     F -= self.k*v*u_td*self.n*self.ds(0)
 
-                # stabilisation
+                # stabilisation - untested
                 if stab((0,0)) > 0.0:
                     if index > 0:
                         tau = stab*self.dX/smooth_abs(ux)
@@ -322,7 +324,7 @@ class Model():
                         u = q_td/h_td
                         tau = stab*self.dX*(smooth_abs(u)+u+(phi_td_p*h_td_p)**0.5)*h_td
                         F += self.k*grad(v)[0]*tau*grad(u)[0]*dx
-                        F -= self.k*v*tau*grad(u)[0]*self.n*(self.ds(0) + self.ds(1))                            
+                        F -= self.k*v*tau*grad(u)[0]*self.n*(self.ds(0) + self.ds(1)) 
 
                 if grad_term:
                     F -= self.k*grad(v)[0]*grad_term*dx
@@ -341,24 +343,24 @@ class Model():
         F_q =      createForm(q, q_td, self.q_tf, 0, 
                               self.q_disc, self.q_b, 
                               weak_b = ([0.0, self.ds(0)], [u_N_td*h_td, self.ds(1)]),
-                              grad_term = q_td**2.0/h_td + 0.5*phi_td*h_td)
+                              grad_term = q_td**2.0/h_td + 0.5*phi_td*h_td, enable=True)
 
         # CONSERVATION 
         F_h =      createForm(h, h_td, self.h_tf, 1, 
                               self.h_disc, self.h_b,  
-                              grad_term = q_td)
+                              grad_term = q_td, enable=True)
 
         # VOLUME FRACTION
         F_phi =    createForm(phi, phi_td, self.phi_tf, 2, 
                               self.phi_disc, self.phi_b, 
                               grad_term = q_td*phi_td/h_td,
-                              settling = self.beta*phi_td/h_td)
+                              settling = self.beta*phi_td/h_td, enable=True)
 
         # DEPOSIT
         F_phi_d =  createForm(phi_d, phi_d_td, self.phi_d_tf, 3, 
                               self.phi_d_disc, self.phi_d_b,
                               weak_b = [[phi_d_td, self.ds(0)], [0.0, self.ds(1)]],
-                              settling = -self.beta*phi_td/h_td)
+                              settling = -self.beta*phi_td/h_td, enable=True)
 
         # NOSE LOCATION AND SPEED
         if self.mms:
@@ -375,6 +377,23 @@ class Model():
 
         # compute directional derivative about u in the direction of du (Jacobian)
         self.J = derivative(self.F, self.w[0], trial)
+        
+        if self.time_discretise.im_func == runge_kutta:
+            # 2nd order
+            self.F_RK  = (-(1./2.)*inner(self.v, self.w[2])*dx + 
+                           (1./2.)*(self.F - x_N_td*inner(self.v, self.w[0])*dx)
+                           + x_N_td*inner(self.v, self.w[0])*dx)
+            self.J_RK  = derivative(self.F_RK, self.w[0], trial)
+
+            # 3rd order
+            self.F_RK1 = (-(3./4.)*inner(self.v, self.w[2])*dx + 
+                           (1./4.)*(self.F - x_N_td*inner(self.v, self.w[0])*dx)
+                           + x_N_td*inner(self.v, self.w[0])*dx)
+            self.F_RK2 = (-(1./3.)*inner(self.v, self.w[2])*dx + 
+                           (2./3.)*(self.F - x_N_td*inner(self.v, self.w[0])*dx)
+                           + x_N_td*inner(self.v, self.w[0])*dx)
+            self.J_RK1 = derivative(self.F_RK1, self.w[0], trial)
+            self.J_RK2 = derivative(self.F_RK2, self.w[0], trial)
 
     def solve(self, T = None, tol = None, nl_tol = 1e-5):
 
@@ -399,6 +418,11 @@ class Model():
             if self.adapt_timestep and (self.t > 0.0 or self.adapt_initial_timestep):
                 solve(self.a_k == self.L_k, self.k)
                 self.timestep = self.k.vector().array()[0]
+
+            M = assemble(self.J)
+            U, s, Vh = scipy.linalg.svd(M.array())
+            cond = s.max()/s.min()
+            print cond
             
             # SOLVE COUPLED EQUATIONS
             if self.time_discretise.im_func == runge_kutta:
@@ -407,20 +431,30 @@ class Model():
 
                 # runge kutta timestep
                 solve(self.F == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
+                if self.slope_limiter:
+                    self.slope_limit()
 
+                # # 2nd order
+                # self.w[1].assign(self.w[0])
+                # solve(self.F_RK == 0, self.w[0], bcs=self.bc, J=self.J_RK, 
+                #       solver_parameters=solver_parameters)
+
+                # 3rd order
                 self.w[1].assign(self.w[0])
-                F_RK = -(3./4.)*inner(self.v, self.w[2])*dx + (1./4.)*self.F
-                solve(F_RK == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
+                solve(self.F_RK1 == 0, self.w[0], bcs=self.bc, J=self.J_RK1, 
+                      solver_parameters=solver_parameters)
+                if self.slope_limiter:
+                    self.slope_limit()
                 
                 self.w[1].assign(self.w[0])
-                F_RK = -(1./3.)*inner(self.v, self.w[2])*dx + (2./3.)*self.F
-                solve(F_RK == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
+                solve(self.F_RK2 == 0, self.w[0], bcs=self.bc, J=self.J_RK2, 
+                      solver_parameters=solver_parameters)
 
                 # replace previous solution
                 self.w[1].assign(self.w[2])
             else:
                 solve(self.F == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
-
+                
             if self.slope_limiter:
                 self.slope_limit()
                             
@@ -538,11 +572,10 @@ class Model():
         q1, h1, phi1, phi_d1 = sw_io.map_to_arrays(self.w[0], self.map_dict)[:4]
         print np.abs((q1-q0)).max(), np.abs((h1-h0)).max(), np.abs((phi1-phi0)).max(), np.abs((phi_d1-phi_d0)).max()
 
-
 if __name__ == '__main__':
 
     model = Model()    
-    model.plot = 0.5
+    model.plot = 0.0005
     model.initialise_function_spaces()
     model.setup(zero_q = False)     
     model.solve(60.0) 
