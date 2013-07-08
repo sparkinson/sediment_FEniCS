@@ -20,13 +20,13 @@ parameters["form_compiler"]["cpp_optimize"] = True
 dolfin.parameters["optimization"]["test_gradient"] = False
 dolfin.parameters["optimization"]["test_gradient_seed"] = 0.1
 solver_parameters = {}
-# solver_parameters["linear_solver"] = "gmres"
+solver_parameters["linear_solver"] = "lu"
 solver_parameters["newton_solver"] = {}
 solver_parameters["newton_solver"]["maximum_iterations"] = 15
 solver_parameters["newton_solver"]["relaxation_parameter"] = 1.0
-# info(parameters, True)
+info(parameters, True)
 # set_log_active(False)
-set_log_level(PROGRESS)
+set_log_level(ERROR)
 
 # smooth functions (also never hit zero)
 def smooth_pos(val):
@@ -371,6 +371,8 @@ class Model():
             self.u_N_tf*u_N[0]*self.ds(1)
         # F_u_N = self.u_N_tf*(0.5*h_td**-0.5*(phi_td)**0.5)*self.ds(1) - \
         #     self.u_N_tf*u_N[0]*self.ds(1)
+        # F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx 
+        # F_u_N = self.x_N_tf*(u_N[0] - u_N[1])*dx 
 
         # combine PDE's
         self.F = F_q + F_h + F_phi + F_phi_d + F_x_N + F_u_N
@@ -422,7 +424,7 @@ class Model():
             M = assemble(self.J)
             U, s, Vh = scipy.linalg.svd(M.array())
             cond = s.max()/s.min()
-            print cond
+            print cond, s.min(), s.max()
             
             # SOLVE COUPLED EQUATIONS
             if self.time_discretise.im_func == runge_kutta:
