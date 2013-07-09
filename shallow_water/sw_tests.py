@@ -37,6 +37,7 @@ class MMS_Model(sw.Model):
         self.h_disc = disc
         self.phi_disc = disc
         self.phi_d_disc = disc
+        self.slope_limiter = None
         
         self.initialise_function_spaces()
 

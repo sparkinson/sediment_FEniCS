@@ -93,10 +93,10 @@ class Plotter():
         x_lim = x_N[0]
         self.q_plot.set_autoscaley_on(False)
         self.q_plot.set_xlim([0.0,x_lim])
-        self.q_plot.set_ylim([0.0,self.u_y_lim])
+        self.q_plot.set_ylim([u_int.min()*0.9,self.u_y_lim])
         self.h_plot.set_autoscaley_on(False)
         self.h_plot.set_xlim([0.0,x_lim])
-        self.h_plot.set_ylim([0.0,self.h_y_lim])
+        self.h_plot.set_ylim([h_int.min()*0.9,self.h_y_lim])
         self.phi_plot.set_autoscaley_on(False)
         self.phi_plot.set_xlim([0.0,x_lim])
         self.phi_plot.set_ylim([0.0,self.phi_y_lim])
