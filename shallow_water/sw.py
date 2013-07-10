@@ -218,7 +218,6 @@ class Model():
 
         self.dX = Constant(self.dX_)
         self.L = Constant(self.L_)
-        self.theta = Constant(self.theta_)
 
         # left boundary marked as 0, right as 1
         class LeftBoundary(SubDomain):
