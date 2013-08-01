@@ -104,11 +104,11 @@ class MyEquation():
 class Model():
     
     # mesh
-    dX = 5.0e-3
-    L = 2.0
+    dX = 5.0e-1
+    L = 2000.0
     
     # current properties
-    l = 0.5                 # initial length over initial height
+    l = 150                 # initial length over initial height
     beta = Constant(5e-3)
     theta = Constant(0.0)
     c_f = Constant(1e-3)
@@ -118,7 +118,7 @@ class Model():
     timestep = dX/10.0
     adapt_timestep = False
     adapt_initial_timestep = False
-    cfl = Constant(1e-2)
+    cfl = Constant(5e-2)
     
     # mms test (default False)
     mms = False
@@ -187,7 +187,7 @@ class Model():
                 self.l = l
 
             def eval(self, value, x):
-                value[0] = 0.5*(1.0 + erf(4.0*(1.0 - (x[0]/self.l))))
+                value[0] = 0.5*(1.0 + erf(10.0*(1.0 - (x[0]/self.l))))
         
         # define initial conditions
         self.w_ic = [

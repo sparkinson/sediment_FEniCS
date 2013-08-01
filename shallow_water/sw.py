@@ -24,7 +24,7 @@ solver_parameters["linear_solver"] = "lu"
 solver_parameters["newton_solver"] = {}
 solver_parameters["newton_solver"]["maximum_iterations"] = 15
 solver_parameters["newton_solver"]["relaxation_parameter"] = 1.0
-info(parameters, True)
+info(parameters, False)
 # set_log_active(False)
 set_log_level(ERROR)
 
@@ -362,6 +362,8 @@ class Model():
         q_td = self.time_discretise(q)
         h_td = self.time_discretise(h)
         phi_td = self.time_discretise(phi)
+        phi_d_td = self.time_discretise(phi_d)
+        x_N_td = self.time_discretise(x_N)
         u_N_td = self.time_discretise(u_N)
 
         # define adaptive timestep form
@@ -393,6 +395,7 @@ class Model():
         # VOLUME FRACTION
         self.E[2] = MyEquation(model=self,
                                index=2, 
+                               weak_b = (phi_td, phi_td),
                                grad_term = q_td*phi_td/h_td,
                                source = self.beta*phi_td/h_td, 
                                enable=True)
@@ -400,7 +403,7 @@ class Model():
         # DEPOSIT
         self.E[3] = MyEquation(model=self,
                                index=3, 
-                               weak_b = (None, 0.0),
+                               weak_b = (phi_d_td, 0.0),
                                source = -self.beta*phi_td/h_td, 
                                enable=True)
 
@@ -464,10 +467,10 @@ class Model():
                 solve(self.a_k == self.L_k, self.k)
                 self.timestep = self.k.vector().array()[0]
 
-            M = assemble(self.J)
-            U, s, Vh = scipy.linalg.svd(M.array())
-            cond = s.max()/s.min()
-            print cond, s.min(), s.max()
+            # M = assemble(self.J)
+            # U, s, Vh = scipy.linalg.svd(M.array())
+            # cond = s.max()/s.min()
+            # print cond, s.min(), s.max()
             
             # SOLVE COUPLED EQUATIONS
             if self.time_discretise.im_func == runge_kutta:
@@ -543,94 +546,48 @@ class Model():
         # get array for variable
         arr = self.w[0].vector().array()
 
-        q0, h0, phi0, phi_d0 = sw_io.map_to_arrays(self.w[0], self.map_dict)[:4] 
+        # create storage arrays for max, min and mean values
+        ele_dof = 2 
+        n_dof = ele_dof * len(self.mesh.cells())
+        u_i_max = np.ones([len(self.mesh.cells()) + 1]) * -1e200
+        u_i_min = np.ones([len(self.mesh.cells()) + 1]) * 1e200
+        u_c = np.empty([len(self.mesh.cells())])
 
         for i_eq in range(4):
 
             if self.disc[i_eq] == 'DG':
 
-                # create storage arrays for max, min and mean values
-                ele_dof = 2 # only for P1 DG elements (self.W.sub(i_eq).dofmap().cell_dofs(0).shape[0])
-                n_dof = ele_dof * len(self.mesh.cells())
-                u_i_max = np.ones([n_dof]) * 1e-200
-                u_i_min = np.ones([n_dof]) * 1e200
-                u_c = np.empty([len(self.mesh.cells())])
-
                 # for each vertex in the mesh store the min and max and mean values
                 for b in range(len(self.mesh.cells())):
-
                     # obtain u_c, u_min and u_max
                     u_i = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(b)])
                     u_c[b] = u_i.mean()
 
                     n1 = b*ele_dof
-                    u_i_max[n1:n1+ele_dof] = u_c[b]
-                    u_i_min[n1:n1+ele_dof] = u_c[b]
+                    u_i_max[b] = max(u_c[b], u_i_max[b])
+                    u_i_max[b+1] = u_c[b]
+                    u_i_min[b] = min(u_c[b], u_i_min[b])
+                    u_i_min[b+1] = u_c[b]
 
-                    if b > 0:
-                        u_j = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(b - 1)])
-                        if self.slope_limiter == 'vb':
-                            u_i_max[n1] = max(u_i_max[n1], u_j.max())
-                            u_i_min[n1] = min(u_i_min[n1], u_j.min())
-                        elif self.slope_limiter == 'bj':
-                            u_i_max[n1] = max(u_i_max[n1], u_j.mean())
-                            u_i_min[n1] = min(u_i_min[n1], u_j.mean())
-                        else:
-                            sys.exit('Can only do vertex-based (vb) or Barth-Jesperson (bj) slope limiting')
-                    elif self.E[i_eq].weak_b[0] != None:
-                        wb = Function(self.W)
-                        test = TestFunction(self.W)
-                        trial = TrialFunction(self.W)
-                        L = 0; a = 0
-                        for i in range(5):
-                            a += test[i]*trial[i]*dx
-                            L += test[i]*Expression('1.0')*dx
-                        a += test[5]*trial[5]*self.ds(0)
-                        L += test[5]*self.E[i_eq].weak_b[0]*self.ds(0)
-                        solve(a == L, wb)
-                        wb = sw_io.map_to_arrays(wb, self.map_dict)[5]
-                        u_i_max[n1] = max(u_i_max[n1], wb[0])
-                        u_i_min[n1] = min(u_i_min[n1], wb[0])
-                    if b + 1 < len(self.mesh.cells()):
-                        u_j = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(b + 1)])
-                        if self.slope_limiter == 'vb':
-                            u_i_max[n1+1] = max(u_i_max[n1+1], u_j.max())
-                            u_i_min[n1+1] = min(u_i_min[n1+1], u_j.min())
-                        elif self.slope_limiter == 'bj':
-                            u_i_max[n1+1] = max(u_i_max[n1+1], u_j.mean())
-                            u_i_min[n1+1] = min(u_i_min[n1+1], u_j.mean())
-                        else:
-                            sys.exit('Can only do vertex-based (vb) or Barth-Jesperson (bj) slope limiting')
-                    elif self.E[i_eq].weak_b[1] != None:
-                        wb = Function(self.W)
-                        test = TestFunction(self.W)
-                        trial = TrialFunction(self.W)
-                        L = 0; a = 0
-                        for i in range(5):
-                            a += test[i]*trial[i]*dx
-                            L += test[i]*Expression('1.0')*dx
-                        a += test[5]*trial[5]*self.ds(1)
-                        L += test[5]*self.E[i_eq].weak_b[1]*self.ds(1)
-                        solve(a == L, wb)
-                        wb = sw_io.map_to_arrays(wb, self.map_dict)[5]
-                        u_i_max[n1+1] = max(u_i_max[n1], wb[0])
-                        u_i_min[n1+1] = min(u_i_min[n1], wb[0])
-
-                # print u_i_max
-                # print u_i_min
-                # print wb[0]
+                if self.E[i_eq].weak_b[0] != None:
+                    u_i = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(0)])
+                    u_i_max[0] = max(u_i[0], u_i_max[0])
+                    u_i_min[0] = min(u_i[0], u_i_min[0])
+                if self.E[i_eq].weak_b[1] != None:
+                    u_i = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(len(self.mesh.cells()) - 1)])
+                    u_i_max[-1] = max(u_i[-1], u_i_max[-1])
+                    u_i_min[-1] = min(u_i[-1], u_i_min[-1])
 
                 for b in range(len(self.mesh.cells())):
 
                     # calculate alpha
                     u_i = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(b)])
                     alpha = 1.0
-                    n1 = b*ele_dof
                     for c in range(ele_dof):
-                        if u_i[c] - u_c[b] > 0:
-                            alpha = min(alpha, (u_i_max[n1+c] - u_c[b])/(u_i[c] - u_c[b]))
-                        if u_i[c] - u_c[b] < 0:
-                            alpha = min(alpha, (u_i_min[n1+c] - u_c[b])/(u_i[c] - u_c[b]))
+                        if u_i[c] - u_c[b] > 0: # and u_i_max[b+c] - u_c[b] > 0:
+                            alpha = min(alpha, (u_i_max[b+c] - u_c[b])/(u_i[c] - u_c[b]))
+                        if u_i[c] - u_c[b] < 0: # and u_i_min[b+c] - u_c[b] < 0:
+                            alpha = min(alpha, (u_i_min[b+c] - u_c[b])/(u_i[c] - u_c[b]))
 
                     # apply slope limiting
                     slope = u_i - u_c[b]
@@ -640,9 +597,6 @@ class Model():
 
         # put array back into w[0]
         self.w[0].vector()[:] = arr
-
-        q1, h1, phi1, phi_d1 = sw_io.map_to_arrays(self.w[0], self.map_dict)[:4]
-        print np.abs((q1-q0)).max(), np.abs((h1-h0)).max(), np.abs((phi1-phi0)).max(), np.abs((phi_d1-phi_d0)).max()
 
 if __name__ == '__main__':
 
@@ -655,8 +609,8 @@ if __name__ == '__main__':
     model = Model()   
     model.x_N_ = 15.0
     model.Fr_ = 1.19
-    model.beta_ = 0.0 #5e-3
-    model.plot = 10.0
+    model.beta_ = 5e-6
+    model.plot = 500.0
     model.initialise_function_spaces()
     model.setup(zero_q = False)     
     model.solve(60000.0) 
