@@ -20,13 +20,32 @@ def similarity_h(model, y):
     H0 = 1./model.Fr_**2.0 - 0.25 + 0.25*y**2.0
     return (4./9.)*K**2.0*model.t**(-2./3.)*H0
 
+def dam_break_u(model, x):
+    h_N = (1.0/(1.0+model.Fr_/2.0))**2.0
+    if x <= -model.t:
+        return 0.0
+    elif x <= (2.0 - 3.0*h_N**0.5)*model.t:
+        return 2./3.*(1.+x/model.t)
+    else:
+        return model.Fr_/(1.0+model.Fr_/2.0)
+            
+def dam_break_h(model, x):
+    h_N = (1.0/(1.0+model.Fr_/2.0))**2.0
+    if x <= -model.t:
+        return 1.0
+    elif x <= (2.0 - 3.0*h_N**0.5)*model.t:
+        return 1./9.*(2.0-x/model.t)**2.0
+    else:
+        return (1.0/(1.0+model.Fr_/2.0))**2.0
+            
 class Plotter():
 
-    def __init__(self, model, rescale, file, similarity = False):
+    def __init__(self, model, rescale, file, similarity = False, dam_break = False):
 
         self.rescale = rescale
         self.save_loc = file
         self.similarity = similarity
+        self.dam_break = dam_break
 
         if model.show_plot:
             plt.ion()
@@ -79,10 +98,23 @@ class Plotter():
 
         if self.similarity:
             similarity_x = np.linspace(0.0,(27*model.Fr_**2.0/(12-2*model.Fr_**2.0))**(1./3.)*model.t**(2./3.),1001)
-            self.q_line_2, = self.q_plot.plot(similarity_x, [similarity_u(model,y) for y in np.linspace(0.0,1.0,1001)], 'k--')
-            self.h_line_2, = self.h_plot.plot(similarity_x, [similarity_h(model,y) for y in np.linspace(0.0,1.0,1001)], 'k--')
+            self.q_line_2, = self.q_plot.plot(similarity_x, 
+                                              [similarity_u(model,y) for y in np.linspace(0.0,1.0,1001)], 
+                                              'k--')
+            self.h_line_2, = self.h_plot.plot(similarity_x, 
+                                              [similarity_h(model,y) for y in np.linspace(0.0,1.0,1001)], 
+                                              'k--')
             self.phi_line_2, = self.phi_plot.plot(similarity_x, np.ones([1001]), 'k--')
             self.phi_d_line_2, = self.phi_d_plot.plot(x, phi_d_int, 'k--')
+
+        if self.dam_break:
+            dam_break_x = np.linspace(-1.0,(model.Fr_/(1.0+model.Fr_/2.0))*model.t,1001)
+            self.q_line_2, = self.q_plot.plot(dam_break_x + 1.0, 
+                                              [dam_break_u(model, x) for x in dam_break_x], 
+                                              'k--')
+            self.h_line_2, = self.h_plot.plot(dam_break_x + 1.0, 
+                                              [dam_break_h(model, x) for x in dam_break_x], 
+                                              'k--')
 
         if self.rescale:
             self.h_y_lim = h_int.max()*1.1
@@ -96,7 +128,7 @@ class Plotter():
         self.q_plot.set_ylim([u_int.min()*0.9,self.u_y_lim])
         self.h_plot.set_autoscaley_on(False)
         self.h_plot.set_xlim([0.0,x_lim])
-        self.h_plot.set_ylim([h_int.min()*0.9,self.h_y_lim])
+        self.h_plot.set_ylim([0.0,self.h_y_lim]) #h_int.min()*0.9,self.h_y_lim])
         self.phi_plot.set_autoscaley_on(False)
         self.phi_plot.set_xlim([0.0,x_lim])
         self.phi_plot.set_ylim([0.0,self.phi_y_lim])

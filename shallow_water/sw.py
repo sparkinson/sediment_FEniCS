@@ -253,7 +253,7 @@ class Model():
 
     def setup(self, h_ic = None, phi_ic = None, 
               q_a = Constant(0.0), q_pa = Constant(0.0), q_pb = Constant(1.0), 
-              w_ic = None, zero_q = False, similarity = False):
+              w_ic = None, zero_q = False, similarity = False, dam_break = False):
         # q_a between 0.0 and 1.0 
         # q_pa between 0.2 and 0.99 
         # q_pb between 1.0 and 
@@ -324,7 +324,8 @@ class Model():
         
         # initialise plotting
         if self.plot:
-            self.plotter = sw_io.Plotter(self, rescale=True, file=self.save_loc, similarity = similarity)
+            self.plotter = sw_io.Plotter(self, rescale=True, file=self.save_loc, 
+                                         similarity = similarity, dam_break = dam_break)
             self.plot_t = self.plot
 
         # write ic's
