@@ -54,7 +54,7 @@ def slope_limit(f, annotate=True):
         for c in range(ele_dof):
             if u_i[c] > u_c[b]: 
                 if u_i_max[b+c] != u_c[b]: 
-                    alpha = (u_i_max[b+c] - u_c[b])/(u_i[c] - u_c[b])
+                    alpha = u_i[c] - u_c[b]# (u_i_max[b+c] - u_c[b])/(u_i[c] - u_c[b])
                 else:
                     alpha = 0
                 arr[indices[c]] = alpha
@@ -153,11 +153,13 @@ class SlopeRHS(libadjoint.RHS):
                           c_ui = np.array([c_arr[index] for index in indices_u])
                           c_vi = np.array([c_arr[index] for index in indices_v])
 
-                          B = (u_i[0] - u_i[1])/2.
-                          A = v_i.mean() - u_i.mean()
-                          val += 1/(2.*B) * c_vi[0].sum()
-                          val += -(B+A)/(2*B**2.0) * c_ui[0]
-                          val += -(B-A)/(2*B**2.0) * c_ui[1]
+                          # B = (u_i[0] - u_i[1])/2.
+                          # A = v_i.mean() - u_i.mean()
+                          # val += 1/(2.*B) * c_vi[0].sum()
+                          # val += -(B+A)/(2*B**2.0) * c_ui[0]
+                          # val += -(B-A)/(2*B**2.0) * c_ui[1]
+                          
+                          val += (c_ui[0] - c_ui[1])/2.0
                   else:
                       val = c_arr[index]
                   out[index] = val
