@@ -159,7 +159,7 @@ class Model():
     # SIMULAITON USER DEFINED PARAMETERS
 
     # mesh
-    dX_ = 5.0e-2
+    dX_ = 1.0e-2
     L_ = 1.0
 
     # current properties
@@ -263,15 +263,35 @@ class Model():
         self.beta = Constant(self.beta_, name="beta")
 
         if type(w_ic) == type(None):
+
             # define initial conditions
             if type(h_ic) == type(None):
                 h_ic = 1.0 
-                h_N = 1.0 
+                h_N = 1.0  
+                # h_ic = Function(self.h_FS, name='h_ic')
+                # trial = TrialFunction(self.h_FS)
+                # test = TestFunction(self.h_FS)
+                # a = inner(test, trial)*dx
+                # q_b = Constant(1.0) - q_a  
+                # f = (1.0 - (q_a*cos(((self.X/self.L)**q_pa)*np.pi) + q_b*cos(((self.X/self.L)**q_pb)*np.pi)))/2.0
+                # L = inner(test, f + Constant(1e-1))*dx 
+                # solve(a == L, h_ic)
+                # h_N = h_ic.vector().array()[-1]
             else:
                 h_N = h_ic.vector().array()[-1]
+
             if type(phi_ic) == type(None): 
-                phi_ic = 1.0 
-                phi_N = 1.0 
+                # phi_ic = 1.0 
+                # phi_N = 1.0 
+                phi_ic = Function(self.phi_FS, name='phi_ic')
+                trial = TrialFunction(self.phi_FS)
+                test = TestFunction(self.phi_FS)
+                a = inner(test, trial)*dx
+                q_b = Constant(1.0) - q_a  
+                f = (1.0 - (q_a*cos(((self.X/self.L)**q_pa)*np.pi) + q_b*cos(((self.X/self.L)**q_pb)*np.pi)))/2.0
+                L = inner(test, f + Constant(1e-3))*dx 
+                solve(a == L, phi_ic)
+                phi_N = phi_ic.vector().array()[-1]
             else:
                 phi_N = phi_ic.vector().array()[-1]
 
@@ -564,6 +584,7 @@ class Model():
                     u_i = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(b)])
                     u_c[b] = u_i.mean()
 
+                    n1 = b*ele_dof
                     u_i_max[b] = max(u_c[b], u_i_max[b])
                     u_i_max[b+1] = u_c[b]
                     u_i_min[b] = min(u_c[b], u_i_min[b])
@@ -608,9 +629,12 @@ if __name__ == '__main__':
 
     model = Model()   
     model.x_N_ = 15.0
-    model.Fr_ = 1.19
+    model.Fr_ = 2.4
     model.beta_ = 5e-6
-    model.plot = 500.0
+    model.plot = 50.0
+    model.save_plot = True
+    model.save_loc = 'results/Fr_2.4'
+    model.cfl = Constant(1.0)
     model.initialise_function_spaces()
     model.setup(zero_q = False)     
-    model.solve(60000.0) 
+    model.solve(2000.0) 
