@@ -29,6 +29,7 @@ def slope_limit(f, annotate=True):
     n_dof = ele_dof * len(mesh.cells())
 
     u_i_max = np.ones([len(mesh.cells()) + 1]) * -1e200
+    u_i_min = np.ones([len(mesh.cells()) + 1]) * 1e200
     u_c = np.empty([len(mesh.cells())])
     
     # for each vertex in the mesh store the mean values
@@ -41,28 +42,40 @@ def slope_limit(f, annotate=True):
         if (u_c[b] > u_i_max[b]):
             u_i_max[b] = u_c[b]
         u_i_max[b+1] = u_c[b]
+        if (u_c[b] > u_i_max[b]):
+            u_i_min[b] = u_c[b]
+        u_i_min[b+1] = u_c[b]
         
     # apply slope limit
     for b in range(len(mesh.cells())):
 
-        # obtain cell data
-        indices = V.dofmap().cell_dofs(b)
-        u_i = np.array([arr[index] for index in indices])
-
         # calculate alpha
         alpha = 1.0
-        for c in range(ele_dof):
-            if u_i[c] > u_c[b]: 
-                if u_i_max[b+c] != u_c[b]: 
-                    alpha = u_i[c] - u_c[b]# (u_i_max[b+c] - u_c[b])/(u_i[c] - u_c[b])
+        for d in range(ele_dof):
+            index = V.dofmap().cell_dofs(b)[d]
+                        
+            limit = True
+            if arr[index] > u_c[b]:
+                u_c_i = u_i_max[b+d]
+            elif arr[index] < u_c[b]:
+                u_c_i = u_i_min[b+d]
+            else:
+                limit = False
+
+            if limit:
+                if u_c_i != u_c[b]:
+                    if ((arr[index] - u_c[b]) > (u_c_i - u_c[b]) and
+                        (u_c_i - u_c[b])/(arr[index] - u_c[b]) < alpha):
+                        alpha = (u_c_i - u_c[b])/(arr[index] - u_c[b])
                 else:
                     alpha = 0
-                arr[indices[c]] = alpha
 
-        # # apply slope limiting
-        # slope = u_i - u_c[b]
-        # for c in range(ele_dof):
-        #     arr[indices[c]] = u_c[b] + alpha*slope[c]
+        # apply slope limiting
+        indices = V.dofmap().cell_dofs(b)
+        u_i = np.array([arr[index] for index in indices])
+        slope = u_i - u_c[b]
+        for d in range(ele_dof): 
+            arr[indices[d]] = u_c[b] + alpha*slope[d]
 
     f.vector()[:] = arr
 
@@ -94,88 +107,143 @@ class SlopeRHS(libadjoint.RHS):
         return [self.adj_var]
 
     def coefficients(self):
-       return [self.f]
+        return [self.f]
 
     def __str__(self):
         return "SlopeRHS" + hashlib.md5(str(self.f)).hexdigest()
 
     def __call__(self, dependencies, values):
 
-           d = Function(values[0].data)
-           slope_limit(d, annotate=False)
+        d = Function(values[0].data)
+        slope_limit(d, annotate=False)
 
-           return adjlinalg.Vector(d)
+        return adjlinalg.Vector(d)
 
     def derivative_action(self, dependencies, values, variable, contraction_vector, hermitian):
 
-          f = Function(values[0].data)
-          arr = f.vector().array()
-          c = contraction_vector.data
-          c_arr = c.vector().array()
+        f = Function(values[0].data)
+        arr = f.vector().array()
+        c = contraction_vector.data
+        c_arr = c.vector().array()
 
-          out = arr.copy()
+        out = arr.copy()
 
-          # create storage arrays for max, min and mean values
-          ele_dof = 2 
-          n_dof = ele_dof * len(mesh.cells())
+        # create storage arrays for max, min and mean values
+        ele_dof = 2 
+        n_dof = ele_dof * len(mesh.cells())
 
-          u_i_max = np.ones([len(mesh.cells()) + 1]) * -1e200
-          u_c = np.empty([len(mesh.cells())])
+        u_i_max = np.ones([len(mesh.cells()) + 1]) * -1e200
+        u_i_min = np.ones([len(mesh.cells()) + 1]) * 1e200
+        u_c = np.empty([len(mesh.cells())])
 
-          # for each vertex in the mesh store the mean values
-          for b in range(len(mesh.cells())):
-              indices = V.dofmap().cell_dofs(b)
+        # for each vertex in the mesh store the mean values
+        for b in range(len(mesh.cells())):
+            indices = V.dofmap().cell_dofs(b)
 
-              u_i = np.array([arr[index] for index in indices])
-              u_c[b] = u_i.mean()
+            u_i = np.array([arr[index] for index in indices])
+            u_c[b] = u_i.mean()
 
-              if (u_c[b] > u_i_max[b]):
-                  u_i_max[b] = u_c[b]
-              u_i_max[b+1] = u_c[b]
+            if (u_c[b] > u_i_max[b]):
+                u_i_max[b] = u_c[b]
+            u_i_max[b+1] = u_c[b]
+            if (u_c[b] > u_i_max[b]):
+                u_i_min[b] = u_c[b]
+            u_i_min[b+1] = u_c[b]
 
-          # apply slope limit
-          for b in range(len(mesh.cells())):
+        # apply slope limit
+        for b in range(len(mesh.cells())):
 
-              # calculate alpha for first index in element
-              for d in range(ele_dof):
-                  index = V.dofmap().cell_dofs(b)[d]
-                  if arr[index] > u_c[b]:
-                      val = 0
-                      if u_i_max[b+d] != u_c[b]: 
-                          if d == 0:
-                              indices_u = V.dofmap().cell_dofs(b)
-                              indices_v = V.dofmap().cell_dofs(b-1)
-                          else:
-                              indices_u = reverse(V.dofmap().cell_dofs(b))
-                              indices_v = V.dofmap().cell_dofs(b+1)
-                          u_i = np.array([arr[index] for index in indices_u])
-                          v_i = np.array([arr[index] for index in indices_v])
-                          c_ui = np.array([c_arr[index] for index in indices_u])
-                          c_vi = np.array([c_arr[index] for index in indices_v])
+            # obtain cell data
+            indices = V.dofmap().cell_dofs(b)
+            c_u = np.array([c_arr[i] for i in indices])
+            c_v = np.array([c_arr[i] for i in indices])
 
-                          # B = (u_i[0] - u_i[1])/2.
-                          # A = v_i.mean() - u_i.mean()
-                          # val += 1/(2.*B) * c_vi[0].sum()
-                          # val += -(B+A)/(2*B**2.0) * c_ui[0]
-                          # val += -(B-A)/(2*B**2.0) * c_ui[1]
-                          
-                          val += (c_ui[0] - c_ui[1])/2.0
-                  else:
-                      val = c_arr[index]
-                  out[index] = val
+            # calculate alpha 
+            alpha = 1
+            alpha_i = -1
+            for d in range(ele_dof):
+                index = V.dofmap().cell_dofs(b)[d]
 
-              # # apply slope limiting
-              # slope = u_i - u_c[b]
-              # for c in range(ele_dof):
-              #     arr[indices[c]] = u_c[b] + alpha*slope[c]
+                limit = True
+                if arr[index] > u_c[b]:
+                    u_c_i = u_i_max[b+d]
+                elif arr[index] < u_c[b]:
+                    u_c_i = u_i_min[b+d]
+                else:
+                    limit = False
 
+                if limit:
+                    if u_c_i != u_c[b]: 
+                        if ((arr[index] - u_c[b]) > (u_c_i - u_c[b]) and
+                            (u_c_i - u_c[b])/(arr[index] - u_c[b]) < alpha):
+                            if d == 0:
+                                indices_u = V.dofmap().cell_dofs(b)
+                                indices_v = V.dofmap().cell_dofs(b-1)
+                            else:
+                                indices_u = reverse(V.dofmap().cell_dofs(b))
+                                indices_v = V.dofmap().cell_dofs(b+1)
+                            u = np.array([arr[i] for i in indices_u])
+                            v = np.array([arr[i] for i in indices_v])
+                            c_u = np.array([c_arr[i] for i in indices_u])
+                            c_v = np.array([c_arr[i] for i in indices_v])
 
-          f.vector()[:] = out
+                            alpha = (u_c_i - u_c[b])/(arr[index] - u_c[b])
+                            alpha_i = d
+                            
+                            f_ = v.sum() - u.sum()
+                            g_ = u[0] - u[1]
+                            d_alpha_ui = -(g_+f_)/g_**2.0 
+                            d_alpha_uj = -(g_-f_)/g_**2.0 
+                            d_alpha_v  = 1/g_
+                        continue
+                    else:
+                        alpha = 0
 
-          return adjlinalg.Vector(f)                                                  
+            # obtain cell data
+            indices = V.dofmap().cell_dofs(b)
 
-# Annotate the forward model 
-ic = project(Expression("sin(x[0])"), V, name="ic")
+            if alpha_i < 0:
+                d_alpha_ui = 0
+                d_alpha_uj = 0
+                d_alpha_v  = 0
+                alpha_i = 0
+                c_u = np.array([c_arr[i] for i in indices])
+                c_v = np.array([c_arr[i] for i in indices])
+                u = np.array([arr[i] for i in indices])
+    
+            # apply slope limiting
+            for d in range(ele_dof):
+                if d == alpha_i:
+                    arr[indices[d]]  = 0.5*(1 + alpha + d_alpha_ui*(u[0]-u[1]))*c_u[0]
+                    arr[indices[d]] += 0.5*(1 - alpha + d_alpha_uj*(u[0]-u[1]))*c_u[1]
+                    arr[indices[d]] += 0.5*(d_alpha_v*u[0] - d_alpha_v*u[1])*c_v.sum()
+                else:
+                    arr[indices[d]]  = 0.5*(1 + alpha + d_alpha_uj*(u[1]-u[0]))*c_u[1]
+                    arr[indices[d]] += 0.5*(1 - alpha + d_alpha_ui*(u[1]-u[0]))*c_u[0]
+                    arr[indices[d]] += 0.5*(d_alpha_v*u[1] - d_alpha_v*u[0])*c_v.sum()
+
+        f.vector()[:] = arr
+
+        return adjlinalg.Vector(f)         
+
+# Create sloped ic
+ic = Function(V, name="ic") 
+arr = ic.vector().array()
+for b in range(0,len(mesh.cells())):
+    # obtain cell data
+    indices = V.dofmap().cell_dofs(b)
+    u_i = np.array([arr[index] for index in indices])
+    arr[indices[0]] = np.sin(b/float(N))
+    arr[indices[1]] = np.sin((b+1)/float(N))
+for b in range(0,len(mesh.cells()),2):
+    # obtain cell data
+    indices = V.dofmap().cell_dofs(b)
+    u_c = np.array([arr[index] for index in indices]).mean()
+    arr[indices[0]] = u_c + 3.0*(arr[indices[0]]-u_c)
+    arr[indices[1]] = u_c + 3.0*(arr[indices[1]]-u_c)
+ic.vector()[:] = arr
+
+# Annotate the forward model
 f = main(ic)
 print f.vector().array()
 adj_html("forward.html", "forward")
@@ -194,7 +262,7 @@ def Jhat(ic):
     f = main(ic, annotate=False)
     return assemble(inner(f, f)*dx)
 
-minconv = taylor_test(Jhat, m, Jhat(ic), dj, seed=1e-9, perturbation_direction=interpolate(Expression("sin(x[0])"), V))
+minconv = taylor_test(Jhat, m, Jhat(ic), dj, perturbation_direction=interpolate(Expression("sin(x[0])"), V))
 assert minconv > 1.99
 
 
