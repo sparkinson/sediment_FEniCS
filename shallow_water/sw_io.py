@@ -50,13 +50,12 @@ class Plotter():
         if model.show_plot:
             plt.ion()
         
-        q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.map_dict)     
+        y, q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.y, model.mesh)     
 
         self.h_y_lim = np.array(h).max()*1.1
         self.u_y_lim = np.array(q).max()*1.1
         self.phi_y_lim = phi.max()*1.10
         
-        x = np.linspace(0.0, x_N[0], 10001)
         self.fig = plt.figure(figsize=(12, 12), dpi=100)
         self.q_plot = self.fig.add_subplot(411)
         self.h_plot = self.fig.add_subplot(412)
@@ -69,11 +68,10 @@ class Plotter():
 
     def update_plot(self, model):
 
-        q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.map_dict)  
+        y, q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.y, model.mesh)     
+        y = y*x_N
 
-        x = np.linspace(0.0, x_N[0], 10001)
-
-        self.title.set_text(timestep_info_string(model, True))#('variables at t={}'.format(model.t))
+        self.title.set_text(timestep_info_string(model, True))
         
         self.q_plot.clear()
         self.h_plot.clear()
@@ -86,26 +84,21 @@ class Plotter():
         self.phi_plot.set_ylabel(r'$\varphi$')
         self.phi_d_plot.set_ylabel(r'$\eta$')
 
-        u_int = self.y_data(model, q, x_N[0], x, h)
-        h_int = self.y_data(model, h, x_N[0], x)
-        phi_int = self.y_data(model, phi, x_N[0], x, h)
-        phi_d_int = self.y_data(model, phi_d, x_N[0], x)
-
-        self.q_line, = self.q_plot.plot(x, u_int, 'r-')
-        self.h_line, = self.h_plot.plot(x, h_int, 'r-')
-        self.phi_line, = self.phi_plot.plot(x, phi_int, 'r-')
-        self.phi_d_line, = self.phi_d_plot.plot(x, phi_d_int, 'r-')
+        self.q_line, = self.q_plot.plot(y, q, 'r-')
+        self.h_line, = self.h_plot.plot(y, h, 'r-')
+        self.phi_line, = self.phi_plot.plot(y, phi, 'r-')
+        self.phi_d_line, = self.phi_d_plot.plot(y, phi_d, 'r-')
 
         if self.similarity:
             similarity_x = np.linspace(0.0,(27*model.Fr_**2.0/(12-2*model.Fr_**2.0))**(1./3.)*model.t**(2./3.),1001)
             self.q_line_2, = self.q_plot.plot(similarity_x, 
-                                              [similarity_u(model,y) for y in np.linspace(0.0,1.0,1001)], 
+                                              [similarity_u(model,x) for x in np.linspace(0.0,1.0,1001)], 
                                               'k--')
             self.h_line_2, = self.h_plot.plot(similarity_x, 
-                                              [similarity_h(model,y) for y in np.linspace(0.0,1.0,1001)], 
+                                              [similarity_h(model,x) for x in np.linspace(0.0,1.0,1001)], 
                                               'k--')
             self.phi_line_2, = self.phi_plot.plot(similarity_x, np.ones([1001]), 'k--')
-            self.phi_d_line_2, = self.phi_d_plot.plot(x, phi_d_int, 'k--')
+            self.phi_d_line_2, = self.phi_d_plot.plot(y, phi_d, 'k--')
 
         if self.dam_break:
             dam_break_x = np.linspace(-1.0,(model.Fr_/(1.0+model.Fr_/2.0))*model.t,1001)
@@ -117,15 +110,15 @@ class Plotter():
                                               'k--')
 
         if self.rescale:
-            self.h_y_lim = h_int.max()*1.1
-            self.u_y_lim = u_int.max()*1.1
-            self.phi_y_lim = phi_int.max()*1.10
+            self.h_y_lim = h.max()*1.1
+            self.u_y_lim = q.max()*1.1
+            self.phi_y_lim = phi.max()*1.10
 
-        phi_d_y_lim = max(phi_d_int.max()*1.10, 1e-10)
-        x_lim = x_N[0]
+        phi_d_y_lim = max(phi_d.max()*1.10, 1e-10)
+        x_lim = x_N
         self.q_plot.set_autoscaley_on(False)
         self.q_plot.set_xlim([0.0,x_lim])
-        self.q_plot.set_ylim([u_int.min()*0.9,self.u_y_lim])
+        self.q_plot.set_ylim([q.min()*0.9,self.u_y_lim])
         self.h_plot.set_autoscaley_on(False)
         self.h_plot.set_xlim([0.0,x_lim])
         self.h_plot.set_ylim([0.0,self.h_y_lim]) #h_int.min()*0.9,self.h_y_lim])
@@ -141,43 +134,16 @@ class Plotter():
         if model.save_plot:
             self.fig.savefig(self.save_loc + '_{:06.3f}.png'.format(model.t))  
 
-    def y_data(self, model, u, x_n, x, norm = None):
-
-        val_x = np.linspace(0.0, x_n, model.L_/model.dX_ + 1)
-
-        # PnDG
-        if len(u) > len(val_x):
-            v = val_x
-            val_x = [v[0]]
-            for val_x_ in v[1:-1]:
-                val_x.append(val_x_)
-                val_x.append(val_x_)
-            val_x.append(v[-1])
-
-        # P0DG
-        if len(u) < len(val_x):
-            v = val_x
-            val_x = []
-            for i in range(len(v[:-1])):
-                val_x.append(v[i:i+1].mean())
-
-        u_int = np.interp(x, val_x, u)
-        
-        if norm != None:
-            norm_int = self.y_data(model, norm, x_n, x)
-            u_int = u_int/norm_int
-
-        return u_int
-
     def clean_up(self):
         plt.close()
 
 class Adjoint_Plotter():
 
-    def __init__(self, file, show, target):
+    def __init__(self, file, show, save, target):
 
         self.save_loc = file
         self.show = show
+        self.save = save
         self.target = target
 
         if self.show:
@@ -188,6 +154,8 @@ class Adjoint_Plotter():
             self.target_phi = np.array(json.loads(f.readline()))
             f = open('deposit_data.json','r')
             self.target_phi_d = np.array(json.loads(f.readline()))
+            f = open('runout_data.json','r')
+            self.target_x = json.loads(f.readline())
         
         self.j = []
         
@@ -196,7 +164,7 @@ class Adjoint_Plotter():
         self.phi_d_plot = self.fig.add_subplot(132)
         self.j_plot = self.fig.add_subplot(133)
 
-    def update_plot(self, phi_ic, phi_d, j):  
+    def update_plot(self, phi_ic, phi_d, x, x_N, j):  
         
         self.phi_plot.clear()
         self.phi_d_plot.clear()
@@ -210,11 +178,11 @@ class Adjoint_Plotter():
         self.j_plot.set_ylabel(r'$J$')
 
         if self.target:
-            self.target_phi_line, = self.phi_plot.plot(np.linspace(0,1.0,len(self.target_phi)), self.target_phi, 'r-')
-            self.target_phi_d_line, = self.phi_d_plot.plot(np.linspace(0,1.0,len(self.target_phi_d)), self.target_phi_d, 'r-')
+            self.target_phi_line, = self.phi_plot.plot(x, self.target_phi, 'r-')
+            self.target_phi_d_line, = self.phi_d_plot.plot(x*self.target_x[0], self.target_phi_d, 'r-')
 
-        self.phi_line, = self.phi_plot.plot(np.linspace(0,1.0,len(phi_ic)), phi_ic, 'b-')
-        self.phi_d_line, = self.phi_d_plot.plot(np.linspace(0,1.0,len(phi_d)), phi_d, 'b-')
+        self.phi_line, = self.phi_plot.plot(x, phi_ic, 'b-')
+        self.phi_d_line, = self.phi_d_plot.plot(x*x_N, phi_d, 'b-')
 
         self.j.append(j)
         if all(e > 0.0 for e in self.j):
@@ -227,37 +195,11 @@ class Adjoint_Plotter():
         
         if self.show:
             self.fig.canvas.draw()
-        # if model.save_plot:
-        #     self.fig.savefig(self.save_loc + '_{:06.3f}.png'.format(model.t)) 
+        if self.save:
+            self.fig.savefig(self.save_loc + '_{}.png'.format(len(self.j)))   
 
     def clean_up(self):
         plt.close()
-
-def generate_dof_map(model):
-    
-    # get dof_maps
-    model.map_dict = dict()
-
-    for i in range(6):
-        if model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()) + 1:   # P1CG 
-            model.map_dict[i] = [model.W.sub(i).dofmap().cell_dofs(j)[0] for j in range(len(model.mesh.cells()))]
-            model.map_dict[i].append(model.W.sub(i).dofmap().cell_dofs(len(model.mesh.cells()) - 1)[-1])
-        elif model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()) * 2 + 1:   # P2CG 
-            model.map_dict[i] = [model.W.sub(i).dofmap().cell_dofs(j)[:-1] for j in range(len(model.mesh.cells()))]
-            model.map_dict[i] = list(np.array(model.map_dict[i]).flatten())
-            model.map_dict[i].append(model.W.sub(i).dofmap().cell_dofs(len(model.mesh.cells()) - 1)[-1])    
-        elif model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()):   # P0DG
-            model.map_dict[i] = [model.W.sub(i).dofmap().cell_dofs(j) for j in range(len(model.mesh.cells()))]
-            model.map_dict[i] = list(np.array(model.map_dict[i]).flatten())
-        elif model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()) * 2:   # P1DG
-            model.map_dict[i] = [model.W.sub(i).dofmap().cell_dofs(j) for j in range(len(model.mesh.cells()))]
-            model.map_dict[i] = list(np.array(model.map_dict[i]).flatten())   
-        elif model.W.sub(i).dofmap().global_dimension() == len(model.mesh.cells()) * 3:   # P2DG
-            dof = model.W.sub(i).dofmap()
-            model.map_dict[i] = [[dof.cell_dofs(j)[0], dof.cell_dofs(j)[1]] for j in range(len(model.mesh.cells()))]
-            model.map_dict[i] = list(np.array(model.map_dict[i]).flatten())
-        else:   # R
-            model.map_dict[i] = model.W.sub(i).dofmap().cell_dofs(0)  
 
 def clear_model_files(file):
 
@@ -276,7 +218,7 @@ def clear_model_files(file):
 
 def write_model_to_files(model, method, file):
 
-    q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.map_dict)  
+    y, q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.y, model.mesh)    
 
     write_array_to_file(file + '_q.json', q, method)
     write_array_to_file(file + '_h.json', h, method)
@@ -288,43 +230,85 @@ def write_model_to_files(model, method, file):
 
 def print_timestep_info(model, delta):
     
-    info_green("\nEND OF TIMESTEP " + timestep_info_string(model) + "dw = {:.2e}\n".format(delta))
+    if delta < 1e10:
+        info_green("\nEND OF TIMESTEP " + timestep_info_string(model) + " dw = {:.2e}\n".format(delta))
+    else:
+        info_green("\nEND OF TIMESTEP " + timestep_info_string(model))
 
 def timestep_info_string(model, tex=False):
+
+    arr = model.w[0].vector().array()
+    n_ele = len(model.mesh.cells())
+
+    x_N = arr[model.W.sub(4).dofmap().cell_dofs(0)[0]]
+    u_N = arr[model.W.sub(5).dofmap().cell_dofs(0)[0]]
+    h_N = arr[model.W.sub(1).dofmap().cell_dofs(n_ele - 1)[1]]
+
+    q_cons = 0
+    h_cons = 0
+    phi_cons = 0
+    sus = 0
     
-    q, h, phi, phi_d, x_N, u_N = map_to_arrays(model.w[0], model.map_dict) 
+    DX = x_N*model.dX_
+    
+    for b in range(n_ele):
+        q_indices = model.W.sub(0).dofmap().cell_dofs(b)
+        h_indices = model.W.sub(1).dofmap().cell_dofs(b)
+        phi_indices = model.W.sub(2).dofmap().cell_dofs(b)
+        phi_d_indices = model.W.sub(3).dofmap().cell_dofs(b)
+
+        q_i = np.array([arr[index] for index in q_indices])
+        h_i = np.array([arr[index] for index in h_indices])
+        phi_i = np.array([arr[index] for index in phi_indices])
+        phi_d_i = np.array([arr[index] for index in phi_d_indices])
+
+        q_c = q_i.mean()
+        h_c = h_i.mean()
+        phi_c = phi_i.mean()
+        phi_d_c = phi_d_i.mean()
         
-    mass = (h[:model.L_/model.dX_ + 1]*(x_N[0]*model.dX_)).sum()
+        q_cons += q_c*DX
+        h_cons += h_c*DX
+        phi_cons += (phi_c + phi_d_c)*DX
+        
+        sus += phi_c*DX
 
     if tex:
         return ("$t$ = {0:.2e}, $dt$ = {1:.2e}:\n".format(model.t, model.timestep) +
-                "$x_N$ = {0:.2e}, $\dot{{x}}_N$ = {1:.2e}, $h_N$ = {3:.2e}, mass = {4:.2e}"
-                .format(x_N[0], u_N[0], q[-1]/h[-1], h[-1], mass))
+                "$x_N$ = {0:.2e}, $\dot{{x}}_N$ = {1:.2e}, $h_N$ = {2:.2e}, h = {4:.2e}, phi = {5:.2e}, sus = {6:.2e}"
+                .format(x_N, u_N, h_N, q_cons, h_cons, phi_cons, sus))
     else:
         return ("t = {0:.2e}, dt = {1:.2e}:\n".format(model.t, model.timestep) +
-                "x_N = {0:.2e}, u_N = {1:.2e}, u_N_2 = {2:.2e}, h_N = {3:.2e}, mass = {4:.2e}"
-                .format(x_N[0], u_N[0], q[-1]/h[-1], h[-1], mass))
+                "x_N = {0:.2e}, u_N = {1:.2e}, h_N = {2:.2e}, h = {4:.2e}, phi = {5:.2e}, sus = {6:.2e}"
+                .format(x_N, u_N, h_N, q_cons, h_cons, phi_cons, sus))
 
-def map_to_arrays(w, map):
+def map_to_arrays(w, x, mesh):
+
+    arr = w.vector().array()
+    n_ele = len(mesh.cells())
+
+    W = w.function_space()
+    X = x.function_space()
+
+    q = []
+    h = []
+    phi = []
+    phi_d = []
+    y = []
+
+    for i_ele in range(n_ele):
+        q.append([arr[i] for i in W.sub(0).dofmap().cell_dofs(i_ele)])
+        h.append([arr[i] for i in W.sub(1).dofmap().cell_dofs(i_ele)])
+        phi.append([arr[i] for i in W.sub(2).dofmap().cell_dofs(i_ele)])
+        phi_d.append([arr[i] for i in W.sub(3).dofmap().cell_dofs(i_ele)])
+        y.append([x.vector().array()[i] for i in X.dofmap().cell_dofs(i_ele)])
     
-    q = np.array([w.vector().array()[i] for i in map[0]])
-    h = np.array([w.vector().array()[i] for i in map[1]])
-    phi = np.array([w.vector().array()[i] for i in map[2]])
-    phi_d = np.array([w.vector().array()[i] for i in map[3]])
-    x_N = np.array([w.vector().array()[i] for i in map[4]])
-    u_N = np.array([w.vector().array()[i] for i in map[5]])
+    x_N = arr[W.sub(4).dofmap().cell_dofs(0)[0]]
+    u_N = arr[W.sub(5).dofmap().cell_dofs(0)[0]]
 
-    if len(q) > len(h):
-        indices = np.array([[i, i+2] for i in range(0, len(q), 2)]).flatten()
-        q_p1 = [q[i] for i in range(0, len(q), 2)]
-        q = np.array(q_p1)
-
-    if len(phi) > len(h):
-        indices = np.array([[i, i+2] for i in range(0, len(phi), 2)]).flatten()
-        phi_p1 = [phi[i] for i in range(0, len(phi), 2)]
-        phi = np.array(phi_p1)
-    
-    return q, h, phi, phi_d, x_N, u_N
+    return (np.array(y).flatten(), np.array(q).flatten(), 
+            np.array(h).flatten(), np.array(phi).flatten(), 
+            np.array(phi_d).flatten(), x_N, u_N)
 
 def set_model_ic_from_file():
     print 'Not implemented'
@@ -332,6 +316,12 @@ def set_model_ic_from_file():
 def create_function_from_file(fname, fs):
     f = open(fname, 'r')
     data = np.array(json.loads(f.readline()))
+    data_ = data.copy()
+    for i in range(len(data)/2):
+        j = i*2
+        data_[j] = data[-(j+2)]
+        data_[j+1] = data[-(j+1)]
+    data = data_
     fn = Function(fs)
     fn.vector()[:] = data
     f.close()

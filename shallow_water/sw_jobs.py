@@ -45,6 +45,9 @@ parser.add_option('-l', '--save_loc',
 parser.add_option('-A', '--adapt_timestep',
                   dest='adapt_timestep', action='store_true', default=False,
                   help='adaptive timestep')
+parser.add_option('-i', '--iterations',
+                  dest='iterations', type=int, default=None,
+                  help='iterations between functional change')
 (options, args) = parser.parse_args()
 
 # GENERATE MODEL OBJECT
@@ -85,20 +88,6 @@ def adjoint_setup(model):
     model.adapt_initial_timestep = False
     model.cfl = Constant(0.2)
 
-    # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
-    model.q_b = Constant(0.1)
-    model.h_b = Constant(0.0)
-    model.phi_b = Constant(0.0)
-    model.phi_d_b = Constant(0.1)
-
-    # discretisation
-    model.q_degree = 2
-    model.h_degree = 1
-    model.phi_degree = 1
-    model.phi_d_degree = 1
-    model.h_disc = "CG"
-    model.phi_d_disc = "CG"
-
 if job == 0:  
 
     # SIMULAITON PARAMETERS
@@ -117,32 +106,6 @@ if job == 0:
     model.adapt_timestep = True
     model.adapt_initial_timestep = False
     model.cfl = Constant(0.01)
-
-    # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
-    # model.q_b = Constant(0.2)
-    model.q_b = Constant(100.0)
-    model.h_b = Constant(100.0)
-    model.phi_b = Constant(100.0)
-    model.phi_d_b = Constant(100.0)
-
-    # # discretisation
-    # model.q_degree = 2
-    # model.h_degree = 1
-    # model.phi_degree = 1
-    # model.phi_d_degree = 1
-    # model.h_disc = "CG"
-    # model.phi_d_disc = "CG"
-
-    # discretisation
-    model.q_degree = 1
-    model.h_degree = 1
-    model.phi_degree = 1
-    model.phi_d_degree = 1
-    model.q_disc = "CG"
-    model.h_disc = "CG"
-    model.phi_disc = "CG"
-    model.phi_d_disc = "CG"
-    model.disc = [model.q_disc, model.h_disc, model.phi_disc, model.phi_d_disc]
 
     model.initialise_function_spaces()
     model.setup(zero_q = True)
@@ -170,32 +133,6 @@ if job == 6:
     model.adapt_initial_timestep = False
     model.cfl = Constant(0.5)
 
-    # define stabilisation parameters (0.1,0.1,0.1,0.1) found to work well for t=10.0
-    # model.q_b = Constant(0.2)
-    model.q_b = Constant(0.0)
-    model.h_b = Constant(0.0)
-    model.phi_b = Constant(0.0)
-    model.phi_d_b = Constant(0.0)
-
-    # # discretisation
-    # model.q_degree = 2
-    # model.h_degree = 1
-    # model.phi_degree = 1
-    # model.phi_d_degree = 1
-    # model.h_disc = "CG"
-    # model.phi_d_disc = "CG"
-
-    # discretisation
-    model.q_degree = 1
-    model.h_degree = 1
-    model.phi_degree = 1
-    model.phi_d_degree = 1
-    model.q_disc = "DG"
-    model.h_disc = "DG"
-    model.phi_disc = "DG"
-    model.phi_d_disc = "DG"
-    model.disc = [model.q_disc, model.h_disc, model.phi_disc, model.phi_d_disc]
-
     model.initialise_function_spaces()
     model.setup(zero_q = True)
 
@@ -212,14 +149,14 @@ elif job == 1:
 
     model.setup(phi_ic = phi_ic) 
 
-    q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
-    sw_io.write_array_to_file('phi_ic.json', phi_ic.vector().array(), 'w')
+    y, q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.y, model.mesh) 
+    sw_io.write_array_to_file('phi_ic.json', phi, 'w')
 
     model.solve(T = options.T)
 
-    q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
+    y, q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.y, model.mesh) 
     sw_io.write_array_to_file('deposit_data.json', phi_d, 'w')
-    sw_io.write_array_to_file('runout_data.json', x_N, 'w')
+    sw_io.write_array_to_file('runout_data.json', [x_N], 'w')
 
 elif job == 4:  
 
@@ -231,12 +168,12 @@ elif job == 4:
 
     model.setup(phi_ic = phi_ic) 
 
-    q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
+    y, q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.y, model.mesh) 
     sw_io.write_array_to_file('phi_ic_2_init.json', phi_ic.vector().array(), 'w')
 
     model.solve(T = options.T)
 
-    q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.map_dict) 
+    y, q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(model.w[0], model.y, model.mesh) 
     sw_io.write_array_to_file('deposit_data_2_init.json', phi_d, 'w')
     sw_io.write_array_to_file('runout_data_2_init.json', x_N, 'w')
 
@@ -250,7 +187,7 @@ else:
     else:
         target = False
 
-    plotter = sw_io.Adjoint_Plotter('results/adj_{}_'.format(job), True, target=target)
+    plotter = sw_io.Adjoint_Plotter('results/adj_{}_'.format(job), True, True, target=target)
 
     if job == 2:
 
@@ -268,42 +205,7 @@ else:
         phi_d_aim = sw_io.create_function_from_file('deposit_data.json', model.phi_d_FS)
         x_N_aim = sw_io.create_function_from_file('runout_data.json', model.var_N_FS)
 
-        # form Functional integrals
-        int_0_scale = Constant(1)
-        int_1_scale = Constant(1)
-        int_0 = inner(phi_d-phi_d_aim, phi_d-phi_d_aim)*int_0_scale*dx
-        int_1 = inner(x_N-x_N_aim, x_N-x_N_aim)*int_1_scale*dx
-
-        # determine scaling
-        int_0_scale.assign(1e-5/assemble(int_0))
-        int_1_scale.assign(1e-7/assemble(int_1)) # 1e-4 t=5.0, 1e-4 t=10.0
-        ### int_0 1e-2, int_1 1e-4 - worked well for dimensionalised problem
-
-        # functional regularisation
-        reg_scale = Constant(1)
-        int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
-        reg_scale_base = 1e-4       # 1e-2 for t=10.0
-        reg_scale.assign(reg_scale_base)
-
-        # functional
-        scaling = Constant(1e-0)  # 1e0 t=5.0, 1e-1 t=10.0
-        J = Functional(scaling*(int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
-
-    if job == 5:
-
-        if options.adjoint_test:
-            phi_ic = sw_io.create_function_from_file('phi_ic_adj{}_latest.json'.
-                                                     format(job), model.phi_FS)
-        else:
-            phi_ic = project(Expression('1.0'), model.phi_FS)
-
-        model.setup(phi_ic = phi_ic)#, h_ic=h_ic)
-        model.solve(T = options.T)
-        (q, h, phi, phi_d, x_N, u_N) = split(model.w[0])
-
-        # get model data
-        phi_d_aim = sw_io.create_function_from_file('deposit_data.json', model.phi_d_FS)
-        x_N_aim = sw_io.create_function_from_file('runout_data.json', model.var_N_FS)
+        # plot(phi_d_aim, interactive=True)
 
         # form Functional integrals
         int_0_scale = Constant(1)
@@ -312,18 +214,18 @@ else:
         int_1 = inner(x_N-x_N_aim, x_N-x_N_aim)*int_1_scale*dx
 
         # determine scaling
-        int_0_scale.assign(1e-5/assemble(int_0))
-        int_1_scale.assign(1e-7/assemble(int_1)) # 1e-4 t=5.0, 1e-4 t=10.0
+        int_0_scale.assign(1e-0/assemble(int_0))
+        int_1_scale.assign(1e-2/assemble(int_1)) # 1e-4 t=5.0, 1e-4 t=10.0
         ### int_0 1e-2, int_1 1e-4 - worked well for dimensionalised problem
 
         # functional regularisation
         reg_scale = Constant(1)
-        int_reg = inner(grad(phi), grad(phi))*reg_scale*dx
+        int_reg = inner(grad(phi), grad(phi))*reg_scale*dx + inner(jump(phi), jump(phi))*dS
         reg_scale_base = 1e-4       # 1e-2 for t=10.0
         reg_scale.assign(reg_scale_base)
 
         # functional
-        scaling = Constant(1e-0)  # 1e0 t=5.0, 1e-1 t=10.0
+        scaling = Constant(1e-1)  # 1e0 t=5.0, 1e-1 t=10.0
         J = Functional(scaling*(int_0 + int_1)*dt[FINISH_TIME] + int_reg*dt[START_TIME])
 
     elif job == 3:
@@ -396,7 +298,7 @@ else:
                    # inner(grad(h),grad(h))**reg_power*reg_scale
                    )
 
-        scaling = Constant(1e-0) 
+        scaling = Constant(1e4) 
         J = Functional(scaling*int*dx*dt[FINISH_TIME])# + scaling*int_reg*dx*dt[START_TIME])
 
         # print int_scale((0,0))
@@ -424,7 +326,7 @@ else:
         solve(a == L_g, g)            
         solve(a == L_reg, reg)
 
-        q_, h_, phi_, phi_d_, x_N_, u_N_ = sw_io.map_to_arrays(model.w[0], model.map_dict) 
+        y, q_, h_, phi_, phi_d_, x_N_, u_N_ = sw_io.map_to_arrays(model.w[0], model.y, model.mesh) 
 
         import matplotlib.pyplot as plt
 
@@ -468,6 +370,12 @@ else:
 
             #### initial condition dump hack ####
             phi_ic = value[0].vector().array()
+            phi = phi_ic.copy()
+            for i in range(len(model.mesh.cells())):
+                j = i*2
+                phi[j] = phi_ic[-(j+2)]
+                phi[j+1] = phi_ic[-(j+1)]
+            phi_ic = phi
             sw_io.write_array_to_file('phi_ic_adj{}_latest.json'.format(job),phi_ic,'w')
             sw_io.write_array_to_file('phi_ic_adj{}.json'.format(job),phi_ic,'a')
 
@@ -507,13 +415,13 @@ else:
 
             (fwd_var, output) = adjointer.get_forward_solution(adjointer.equation_count - 1)
             var = adjointer.get_variable_value(fwd_var)
-            q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(var.data, model.map_dict)
+            y, q, h, phi, phi_d, x_N, u_N = sw_io.map_to_arrays(var.data, model.y, model.mesh) 
             sw_io.write_array_to_file('phi_d_adj{}_latest.json'.format(job),phi_d,'w')
             sw_io.write_array_to_file('phi_d_adj{}.json'.format(job),phi_d,'a')
 
             # from IPython import embed; embed()  
             
-            plotter.update_plot(phi_ic, phi_d, j)
+            plotter.update_plot(phi_ic, phi_d, y, x_N, j)
 
             print "* * * J = {}".format(j)
 
@@ -528,11 +436,11 @@ else:
         
     tic()
 
-    if job == 2 or job == 5:
+    if job == 2:
 
-        it = 5
-        if job == 5:
-            it = 2
+        it = 2
+        if options.iterations:
+            it = options.iterations
 
         reduced_functional = MyReducedFunctional(J, 
                                                  [InitialConditionParameter(phi_ic),
@@ -559,7 +467,8 @@ else:
             m_opt = minimize(reduced_functional, method = "L-BFGS-B", 
                              options = {'maxiter': it,
                                         'disp': True, 'gtol': 1e-20, 'ftol': 1e-20}, 
-                             bounds = bounds) 
+                             bounds = bounds,
+                             in_euclidian_space = False) 
 
             # # rescale integral scaling
             # int_0_scale.assign(1e-5/assemble(int_0))
@@ -587,6 +496,7 @@ else:
                    ]]
 
         m_opt = maximize(reduced_functional, 
-                     method = "L-BFGS-B", 
-                     options = {'disp': True, 'gtol': 1e-20}, 
-                     bounds = bounds) 
+                         method = "L-BFGS-B", 
+                         options = {'disp': True, 'gtol': 1e-20}, 
+                         bounds = bounds,
+                         in_euclidian_space = True) 

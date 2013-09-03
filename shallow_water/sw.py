@@ -4,11 +4,14 @@ import sys
 from dolfin import *
 from dolfin_tools import *
 from dolfin_adjoint import *
+import libadjoint
+import hashlib
 import numpy as np
 from optparse import OptionParser
 import json
 import sw_io
 import scipy
+import scipy.sparse as sp
 
 ############################################################
 # DOLFIN SETTINGS
@@ -72,32 +75,30 @@ class MyEquation():
         u_N[1] = w[1][5]
         u_N_td = model.time_discretise(u_N)
 
-        ux = Constant(-1.0)*u_N_td*model.X
+        ux = Constant(-1.0)*u_N_td*model.y
         uxn_up = smooth_pos(ux*model.n)
         uxn_down = smooth_neg(ux*model.n)
-        if model.disc[index] == "DG":
+        if model.disc == "DG":
             ux_n = uxn_down
         else:
             ux_n = ux*model.n
 
-        # get q and calculate qn
+        # get q 
         q = dict()
         q[0] = w[0][0]
         q[1] = w[1][0]
         q_td = model.time_discretise(q)
 
-        # grad_n_up = smooth_pos(qrad_term*model.n)
-        # grad_n_down = smooth_neg(grad_term*model.n)
+        # upwind/downwind grad term
         if grad_term:
-            if model.disc[index] == "DG":
-                # grad_n_up = qn_up/smooth_abs(q_td)
-                # grad_n_down = qn_down/smooth_abs(q_td)
+            if model.disc == "DG":
                 grad_n_up = smooth_pos(grad_term*model.n)
                 grad_n_down = smooth_neg(grad_term*model.n)
             else:
                 grad_n_up = grad_term*model.n
                 grad_n_down = grad_term*model.n
 
+        # store weak boundary value
         self.weak_b = weak_b
 
         if enable:
@@ -118,7 +119,6 @@ class MyEquation():
             # mass term
             if not model.mms:
                 self.F += x_N_td*v*(u[0] - u[1])*dx
-            # self.F += x_N_td*v*(u[0] - u[1])*dx
 
             # mms bc
             if model.mms:
@@ -139,6 +139,7 @@ class MyEquation():
             #         self.F += model.k*grad(v)[0]*tau*grad(u)[0]*dx
             #         self.F -= model.k*v*tau*grad(u)[0]*model.n*(model.ds(0) + model.ds(1)) 
 
+            # grad term
             if grad_term:
                 self.F -= model.k*grad(v)[0]*grad_term*dx
                 self.F += model.k*v*grad_term*model.n*(model.ds(0) + model.ds(1))
@@ -152,6 +153,7 @@ class MyEquation():
                 self.F += model.k*x_N_td*v*source*dx
 
         else:
+            # identity
             self.F = v*(u[0] - u[1])*dx
 
 class Model():
@@ -195,17 +197,10 @@ class Model():
     phi_d_b = Constant(0.0)
 
     # discretisation
-    q_degree = 1
-    h_degree = 1
-    phi_degree = 1
-    phi_d_degree = 1
-    q_disc = "DG"
-    h_disc = "DG"
-    phi_disc = "DG"
-    phi_d_disc = "DG"
-    disc = [q_disc, h_disc, phi_disc, phi_d_disc]
+    degree = 1
+    disc = "DG"
     time_discretise = crank_nicholson #implicit #crank_nicholson
-    slope_limiter = 'vb'
+    slope_limiter = True
 
     # error calculation
     error_callback = None
@@ -230,24 +225,21 @@ class Model():
         self.ds = Measure("ds")[exterior_facet_domains] 
 
         # define function spaces
-        self.q_FS = FunctionSpace(self.mesh, self.q_disc, self.q_degree)
-        self.h_FS = FunctionSpace(self.mesh, self.h_disc, self.h_degree)
-        self.phi_FS = FunctionSpace(self.mesh, self.phi_disc, self.phi_degree)
-        self.phi_d_FS = FunctionSpace(self.mesh, self.phi_d_disc, self.phi_d_degree)
+        self.q_FS = FunctionSpace(self.mesh, self.disc, self.degree)
+        self.h_FS = FunctionSpace(self.mesh, self.disc, self.degree)
+        self.phi_FS = FunctionSpace(self.mesh, self.disc, self.degree)
+        self.phi_d_FS = FunctionSpace(self.mesh, self.disc, self.degree)
         self.var_N_FS = FunctionSpace(self.mesh, "R", 0)
         self.W = MixedFunctionSpace([self.q_FS, self.h_FS, self.phi_FS, self.phi_d_FS, self.var_N_FS, self.var_N_FS])
-        self.X_FS = FunctionSpace(self.mesh, "CG", 1)
-
-        # generate dof_map
-        sw_io.generate_dof_map(self)
+        self.y_FS = FunctionSpace(self.mesh, self.disc, self.degree)
 
         # define test functions
         (self.q_tf, self.h_tf, self.phi_tf, self.phi_d_tf, self.x_N_tf, self.u_N_tf) = TestFunctions(self.W)
         self.v = TestFunction(self.W)
 
         # initialise functions
-        X_ = project(Expression('x[0]'), self.X_FS)
-        self.X = Function(X_, name='X')
+        y_ = project(Expression('x[0]'), self.y_FS)
+        self.y = Function(y_, name='y')
         self.w = dict()
         self.w[0] = Function(self.W, name='U')
 
@@ -257,6 +249,9 @@ class Model():
         # q_a between 0.0 and 1.0 
         # q_pa between 0.2 and 0.99 
         # q_pb between 1.0 and 
+
+        # set time to zero
+        self.t = 0.0
 
         # define constants
         self.Fr = Constant(self.Fr_, name="Fr")
@@ -297,7 +292,7 @@ class Model():
                 test = TestFunction(self.q_FS)
                 a = inner(test, trial)*dx
                 q_b = Constant(1.0) - q_a  
-                f = (1.0 - (q_a*cos(((self.X/self.L)**q_pa)*np.pi) + q_b*cos(((self.X/self.L)**q_pb)*np.pi)))/2.0
+                f = (1.0 - (q_a*cos(((self.y/self.L)**q_pa)*np.pi) + q_b*cos(((self.y/self.L)**q_pb)*np.pi)))/2.0
                 L = inner(test, f*q_N_ic)*dx             
                 solve(a == L, q_ic)
 
@@ -411,15 +406,13 @@ class Model():
         
         # NOSE LOCATION AND SPEED
         if self.mms:
-            F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx 
+            F_x_N = test[4]*(x_N[0] - x_N[1])*dx 
         else:
-            F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx - self.x_N_tf*u_N_td*self.k*dx 
-        F_u_N = self.u_N_tf*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
-            self.u_N_tf*u_N[0]*self.ds(1)
+            F_x_N = test[4]*(x_N[0] - x_N[1])*dx - test[4]*u_N_td*self.k*dx 
+        F_u_N = test[5]*(self.Fr*(phi_td)**0.5)*self.ds(1) - \
+            test[5]*u_N[0]*self.ds(1)
         # F_u_N = self.u_N_tf*(0.5*h_td**-0.5*(phi_td)**0.5)*self.ds(1) - \
         #     self.u_N_tf*u_N[0]*self.ds(1)
-        # F_x_N = self.x_N_tf*(x_N[0] - x_N[1])*dx 
-        # F_u_N = self.x_N_tf*(u_N[0] - u_N[1])*dx 
 
         # combine PDE's
         self.F = self.E[0].F + self.E[1].F + self.E[2].F + self.E[3].F + F_x_N + F_u_N
@@ -444,7 +437,7 @@ class Model():
             self.J_RK1 = derivative(self.F_RK1, self.w[0], trial)
             self.J_RK2 = derivative(self.F_RK2, self.w[0], trial)
 
-    def solve(self, T = None, tol = None, nl_tol = 1e-5):
+    def solve(self, T = None, tol = None, nl_tol = 1e-5, annotate = True):
 
         def time_finish(t):
             if T:
@@ -481,7 +474,7 @@ class Model():
                 # runge kutta timestep
                 solve(self.F == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
                 if self.slope_limiter:
-                    self.slope_limit()
+                    self.slope_limit(self.w[0], annotate=annotate)
 
                 # # 2nd order
                 # self.w[1].assign(self.w[0])
@@ -493,7 +486,7 @@ class Model():
                 solve(self.F_RK1 == 0, self.w[0], bcs=self.bc, J=self.J_RK1, 
                       solver_parameters=solver_parameters)
                 if self.slope_limiter:
-                    self.slope_limit()
+                    self.slope_limit(self.w[0], annotate=annotate)
                 
                 self.w[1].assign(self.w[0])
                 solve(self.F_RK2 == 0, self.w[0], bcs=self.bc, J=self.J_RK2, 
@@ -505,7 +498,7 @@ class Model():
                 solve(self.F == 0, self.w[0], bcs=self.bc, J=self.J, solver_parameters=solver_parameters)
                 
             if self.slope_limiter:
-                self.slope_limit()
+                self.slope_limit(self.w[0], annotate=annotate)
                             
             if tol:
                 delta = 0.0
@@ -542,69 +535,273 @@ class Model():
         if self.error_callback:
             return self.error_callback(self)
 
-    def slope_limit(self):
+    def slope_limit(self, f, annotate = True):
 
         # get array for variable
-        arr = self.w[0].vector().array()
+        arr = f.vector().array()
 
-        # create storage arrays for max, min and mean values
+        # properties
         ele_dof = 2 
-        n_dof = ele_dof * len(self.mesh.cells())
-        u_i_max = np.ones([len(self.mesh.cells()) + 1]) * -1e200
-        u_i_min = np.ones([len(self.mesh.cells()) + 1]) * 1e200
-        u_c = np.empty([len(self.mesh.cells())])
+        n_ele = len(self.mesh.cells())
 
         for i_eq in range(4):
 
-            if self.disc[i_eq] == 'DG':
+            if self.disc == 'DG':
 
-                # for each vertex in the mesh store the min and max and mean values
-                for b in range(len(self.mesh.cells())):
-                    # obtain u_c, u_min and u_max
-                    u_i = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(b)])
+                # create storage arrays for max, min and mean values
+                u_i_max = np.ones([n_ele + 1]) * -1e200
+                u_i_min = np.ones([n_ele + 1]) * 1e200
+                u_c = np.empty([n_ele])
+    
+                # for each vertex in the self.mesh store the mean values
+                for b in range(n_ele):
+                    indices = self.W.sub(i_eq).dofmap().cell_dofs(b)
+
+                    u_i = np.array([arr[index] for index in indices])
                     u_c[b] = u_i.mean()
 
-                    u_i_max[b] = max(u_c[b], u_i_max[b])
+                    if (u_c[b] > u_i_max[b]):
+                        u_i_max[b] = u_c[b]
                     u_i_max[b+1] = u_c[b]
-                    u_i_min[b] = min(u_c[b], u_i_min[b])
+                    if (u_c[b] < u_i_min[b]):
+                        u_i_min[b] = u_c[b]
                     u_i_min[b+1] = u_c[b]
 
                 if self.E[i_eq].weak_b[0] != None:
+                    u_i = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(n_ele - 1)])
+                    u_i_max[-1] = max(u_i[-1], u_i_max[-1])
+                    u_i_min[-1] = min(u_i[-1], u_i_min[-1])
+                if self.E[i_eq].weak_b[1] != None:
                     u_i = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(0)])
                     u_i_max[0] = max(u_i[0], u_i_max[0])
                     u_i_min[0] = min(u_i[0], u_i_min[0])
-                if self.E[i_eq].weak_b[1] != None:
-                    u_i = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(len(self.mesh.cells()) - 1)])
-                    u_i_max[-1] = max(u_i[-1], u_i_max[-1])
-                    u_i_min[-1] = min(u_i[-1], u_i_min[-1])
 
-                for b in range(len(self.mesh.cells())):
+                # apply slope limit
+                for b in range(n_ele):
 
                     # calculate alpha
-                    u_i = np.array([arr[index] for index in self.W.sub(i_eq).dofmap().cell_dofs(b)])
                     alpha = 1.0
-                    for c in range(ele_dof):
-                        if u_i[c] - u_c[b] > 0: # and u_i_max[b+c] - u_c[b] > 0:
-                            alpha = min(alpha, (u_i_max[b+c] - u_c[b])/(u_i[c] - u_c[b]))
-                        if u_i[c] - u_c[b] < 0: # and u_i_min[b+c] - u_c[b] < 0:
-                            alpha = min(alpha, (u_i_min[b+c] - u_c[b])/(u_i[c] - u_c[b]))
+                    for d in range(ele_dof):
+                        index = self.W.sub(i_eq).dofmap().cell_dofs(b)[d]
+
+                        limit = True
+                        if arr[index] > u_c[b]:
+                            u_c_i = u_i_max[b+d]
+                        elif arr[index] < u_c[b]:
+                            u_c_i = u_i_min[b+d]
+                        else:
+                            limit = False
+
+                        if limit:
+                            if u_c_i != u_c[b]:
+                                if (abs(arr[index] - u_c[b]) > abs(u_c_i - u_c[b]) and
+                                    (u_c_i - u_c[b])/(arr[index] - u_c[b]) < alpha):
+                                    alpha = (u_c_i - u_c[b])/(arr[index] - u_c[b])
+                            else:
+                                alpha = 0
 
                     # apply slope limiting
-                    slope = u_i - u_c[b]
                     indices = self.W.sub(i_eq).dofmap().cell_dofs(b)
-                    for c in range(ele_dof):
-                        arr[indices[c]] = u_c[b] + alpha*slope[c]
+                    u_i = np.array([arr[index] for index in indices])
+                    slope = u_i - u_c[b]
+                    for d in range(ele_dof): 
+                        arr[indices[d]] = u_c[b] + alpha*slope[d]
 
         # put array back into w[0]
-        self.w[0].vector()[:] = arr
+        f.vector()[:] = arr
+
+        if annotate:
+            self.annotate_slope_limit(f)
+
+    def annotate_slope_limit(self, f):
+        # First annotate the equation
+        adj_var = adjglobals.adj_variables[f]
+        rhs = SlopeRHS(f, self)
+
+        adj_var_next = adjglobals.adj_variables.next(f)
+
+        identity_block = solving.get_identity(self.W)
+
+        eq = libadjoint.Equation(adj_var_next, blocks=[identity_block], targets=[adj_var_next], rhs=rhs)
+        cs = adjglobals.adjointer.register_equation(eq)
+
+        # Record the result
+        adjglobals.adjointer.record_variable(
+            adjglobals.adj_variables[f], libadjoint.MemoryStorage(adjlinalg.Vector(self.w[0])))
+
+class SlopeRHS(libadjoint.RHS):
+    def __init__(self, f, model):
+        self.adj_var = adjglobals.adj_variables[f]
+        self.f = f
+        self.model = model
+
+    def dependencies(self):
+        return [self.adj_var]
+
+    def coefficients(self):
+        return [self.f]
+
+    def __str__(self):
+        return "SlopeRHS" + hashlib.md5(str(self.f)).hexdigest()
+
+    def reverse(self, a):
+        b = a.copy()
+        for i in range(len(a)):
+            j = len(a) - 1 - i
+            b[j] = a[i]
+        return b
+
+    def __call__(self, dependencies, values):
+
+        d = Function(values[0].data)
+        self.model.slope_limit(d, annotate=False)
+
+        return adjlinalg.Vector(d)
+
+    def derivative_action(self, dependencies, values, variable, contraction_vector, hermitian):
+
+        f = Function(values[0].data)
+        arr = f.vector().array()
+        c = contraction_vector.data
+        c_arr = c.vector().array()
+
+        out = arr.copy()
+
+        # properties
+        ele_dof = 2 
+        n_ele = len(self.model.mesh.cells())
+
+        # gradient matrix
+        n_dof = ele_dof * n_ele
+        G = sp.lil_matrix((len(c_arr), len(c_arr)))
+
+        for i_eq in range(6):
+
+            try:
+                disc = self.model.disc
+            except:
+                disc = None
+
+            if disc == 'DG' and i_eq < 4:
+
+                # create storage arrays for max, min and mean values
+                u_i_max = np.ones([n_ele + 1]) * -1e200
+                u_i_min = np.ones([n_ele + 1]) * 1e200
+                u_c = np.empty([n_ele])
+    
+                # for each vertex in the mesh store the mean values
+                for b in range(n_ele):
+                    indices = self.model.W.sub(i_eq).dofmap().cell_dofs(b)
+
+                    u_i = np.array([arr[index] for index in indices])
+                    u_c[b] = u_i.mean()
+
+                    if (u_c[b] > u_i_max[b]):
+                        u_i_max[b] = u_c[b]
+                    u_i_max[b+1] = u_c[b]
+                    if (u_c[b] < u_i_min[b]):
+                        u_i_min[b] = u_c[b]
+                    u_i_min[b+1] = u_c[b]
+
+                if self.model.E[i_eq].weak_b[0] != None:
+                    u_i = np.array([arr[index] for index in self.model.W.sub(i_eq).dofmap().cell_dofs(n_ele - 1)])
+                    u_i_max[-1] = max(u_i[-1], u_i_max[-1])
+                    u_i_min[-1] = min(u_i[-1], u_i_min[-1])
+                if self.model.E[i_eq].weak_b[1] != None:
+                    u_i = np.array([arr[index] for index in self.model.W.sub(i_eq).dofmap().cell_dofs(0)])
+                    u_i_max[0] = max(u_i[0], u_i_max[0])
+                    u_i_min[0] = min(u_i[0], u_i_min[0])
+
+                # apply slope limit
+                for b in range(n_ele):
+
+                    # obtain cell data
+                    indices = self.model.W.sub(i_eq).dofmap().cell_dofs(b)
+                    c_u = np.array([c_arr[i] for i in indices])
+                    c_v = np.array([c_arr[i] for i in indices])
+
+                    # calculate alpha 
+                    alpha = 1.0
+                    alpha_i = -1
+                    for d in range(ele_dof):
+                        index = self.model.W.sub(i_eq).dofmap().cell_dofs(b)[d]
+
+                        limit = True
+                        if arr[index] > u_c[b]:
+                            u_c_i = u_i_max[b+d]
+                        elif arr[index] < u_c[b]:
+                            u_c_i = u_i_min[b+d]
+                        else:
+                            limit = False
+
+                        if limit:
+                            if u_c_i != u_c[b]: 
+                                if (abs(arr[index] - u_c[b]) > abs(u_c_i - u_c[b]) and
+                                    (u_c_i - u_c[b])/(arr[index] - u_c[b]) < alpha):
+                                    if d == 0:
+                                        indices_u = self.model.W.sub(i_eq).dofmap().cell_dofs(b)
+                                        indices_v = self.model.W.sub(i_eq).dofmap().cell_dofs(b-1)
+                                    else:
+                                        indices_u = self.reverse(self.model.W.sub(i_eq).dofmap().cell_dofs(b))
+                                        indices_v = self.model.W.sub(i_eq).dofmap().cell_dofs(b+1)
+                                    u = np.array([arr[i] for i in indices_u])
+                                    v = np.array([arr[i] for i in indices_v])
+                                    c_u = np.array([c_arr[i] for i in indices_u])
+                                    c_v = np.array([c_arr[i] for i in indices_v])
+
+                                    alpha = (u_c_i - u_c[b])/(arr[index] - u_c[b])
+                                    alpha_i = d
+
+                                    f_ = v.sum() - u.sum()
+                                    g_ = u[0] - u[1]
+                                    d_alpha_ui = -(g_+f_)/g_**2.0 
+                                    d_alpha_uj = -(g_-f_)/g_**2.0 
+                                    d_alpha_v  = 1/g_
+                            else:
+                                alpha = 0
+
+
+                    # default
+                    indices = self.model.W.sub(i_eq).dofmap().cell_dofs(b)
+                    if alpha_i < 0:
+                        alpha_i = 0
+                        d_alpha_ui = 0
+                        d_alpha_uj = 0
+                        d_alpha_v  = 0
+                        u = np.array([arr[i] for i in indices])
+                        indices_u = self.model.W.sub(i_eq).dofmap().cell_dofs(b)
+                        try:
+                            indices_v = self.model.W.sub(i_eq).dofmap().cell_dofs(b-1)
+                        except:
+                            indices_v = self.model.W.sub(i_eq).dofmap().cell_dofs(b+1)
+
+                    # apply slope limiting
+                    for d in range(ele_dof):
+                        if d == alpha_i:
+                            G[indices[d], indices_u[0]] = 0.5*(1 + alpha + d_alpha_ui*(u[0]-u[1]))
+                            G[indices[d], indices_u[1]] = 0.5*(1 - alpha + d_alpha_uj*(u[0]-u[1]))
+                            G[indices[d], indices_v[0]] = 0.5*(d_alpha_v*u[0] - d_alpha_v*u[1])
+                            G[indices[d], indices_v[1]] = 0.5*(d_alpha_v*u[0] - d_alpha_v*u[1])
+                        else:
+                            G[indices[d], indices_u[1]] = 0.5*(1 + alpha + d_alpha_uj*(u[1]-u[0]))
+                            G[indices[d], indices_u[0]] = 0.5*(1 - alpha + d_alpha_ui*(u[1]-u[0]))
+                            G[indices[d], indices_v[0]] = 0.5*(d_alpha_v*u[1] - d_alpha_v*u[0])
+                            G[indices[d], indices_v[1]] = 0.5*(d_alpha_v*u[1] - d_alpha_v*u[0])  
+
+            else:
+
+                for b in range(n_ele):
+                    indices = self.model.W.sub(i_eq).dofmap().cell_dofs(b)
+                    for d in range(len(indices)):
+                        G[indices[d], indices[d]] = 1.0
+
+        if hermitian:
+            G = G.transpose()
+        f.vector()[:] = G.dot(c_arr)
+
+        return adjlinalg.Vector(f)    
 
 if __name__ == '__main__':
-
-    # model = Model()    
-    # model.plot = 0.5
-    # model.initialise_function_spaces()
-    # model.setup(zero_q = False)     
-    # model.solve(60.0) 
 
     model = Model()   
     model.x_N_ = 15.0

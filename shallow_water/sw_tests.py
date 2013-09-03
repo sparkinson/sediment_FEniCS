@@ -28,15 +28,7 @@ class MMS_Model(sw.Model):
         self.phi_b = Constant(0.0)
         self.phi_d_b = Constant(0.0)
 
-        self.q_degree = 1
-        self.h_degree = 1
-        self.phi_degree = 1
-        self.phi_d_degree = 1
-
-        self.q_disc = disc
-        self.h_disc = disc
-        self.phi_disc = disc
-        self.phi_d_disc = disc
+        self.disc = disc
         self.slope_limiter = None
         
         self.initialise_function_spaces()
@@ -53,13 +45,13 @@ class MMS_Model(sw.Model):
                     , self.W.ufl_element())), self.W)
 
         # define bc's
-        bcq = DirichletBC(self.W.sub(0), Expression(mms.q(), degree=self.q_degree), 
+        bcq = DirichletBC(self.W.sub(0), Expression(mms.q(), degree=self.degree), 
                           "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
-        bch = DirichletBC(self.W.sub(1), Expression(mms.h(), degree=self.h_degree), 
+        bch = DirichletBC(self.W.sub(1), Expression(mms.h(), degree=self.degree), 
                           "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
-        bcphi = DirichletBC(self.W.sub(2), Expression(mms.phi(), degree=self.phi_degree), 
+        bcphi = DirichletBC(self.W.sub(2), Expression(mms.phi(), degree=self.degree), 
                             "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
-        bcphi_d = DirichletBC(self.W.sub(3), Expression(mms.phi_d(), degree=self.phi_d_degree), 
+        bcphi_d = DirichletBC(self.W.sub(3), Expression(mms.phi_d(), degree=self.degree), 
                             "(near(x[0], 0.0) || near(x[0], pi)) && on_boundary")
         self.bc = [bcq, bch, bcphi, bcphi_d]
         self.bc = []
@@ -84,10 +76,10 @@ class MMS_Model(sw.Model):
 def mms_test(plot, show, save):
 
     def getError(model):
-        Fq = FunctionSpace(model.mesh, "CG", model.q_degree + 2)
-        Fh = FunctionSpace(model.mesh, model.h_disc, model.h_degree + 2)
-        Fphi = FunctionSpace(model.mesh, "CG", model.phi_degree + 2)
-        Fphi_d = FunctionSpace(model.mesh, model.phi_d_disc, model.phi_d_degree + 2)
+        Fq = FunctionSpace(model.mesh, model.disc, model.degree + 2)
+        Fh = FunctionSpace(model.mesh, model.disc, model.degree + 2)
+        Fphi = FunctionSpace(model.mesh, model.disc, model.degree + 2)
+        Fphi_d = FunctionSpace(model.mesh, model.disc, model.degree + 2)
 
         S_q = project(Expression(mms.q(), degree=5), Fq)
         S_h = project(Expression(mms.h(), degree=5), Fh)
@@ -165,6 +157,9 @@ def taylor_tester(plot, show, save):
     model.plot = plot
     model.show_plot = show
     model.save_plot = save
+    model.slope_limiter = True
+
+    set_log_level(PROGRESS) 
 
     model.initialise_function_spaces()
     
@@ -173,8 +168,8 @@ def taylor_tester(plot, show, save):
     ic = project(Expression('0.5'), model.phi_FS)
     # ic = Constant(0.5)
     model.setup(q_a = ic)
-    model.solve(T = 0.03)       
-
+    model.solve(T = 3e-2)  
+    
     w_0 = model.w[0]
     J = Functional(inner(w_0, w_0)*dx*dt[FINISH_TIME])
     Jw = assemble(inner(w_0, w_0)*dx)
@@ -189,13 +184,13 @@ def taylor_tester(plot, show, save):
   
     def Jhat(ic):
         model.setup(q_a = ic)
-        model.solve(T = 0.03)
+        model.solve(T = 3e-2, annotate = False)
         w_0 = model.w[0]
         print 'Jhat: ', assemble(inner(w_0, w_0)*dx)
         return assemble(inner(w_0, w_0)*dx)
 
     # conv_rate = taylor_test(Jhat, ScalarParameter(ic), Jw, dJdphi, value = ic, seed=1e-2)
-    conv_rate = taylor_test(Jhat, InitialConditionParameter(ic), Jw, dJdphi, value = ic, seed=1e-2)
+    conv_rate = taylor_test(Jhat, InitialConditionParameter(ic), Jw, dJdphi, value = ic, seed=1e-5)
 
     info_blue('Minimum convergence order with adjoint information = {}'.format(conv_rate))
     if conv_rate > 1.9:
@@ -230,17 +225,6 @@ def similarity_test(plot, show, save):
     model.phi_b = Constant(0.0)
     model.phi_d_b = Constant(0.0)
 
-    # discretisation
-    model.q_degree = 1
-    model.h_degree = 1
-    model.phi_degree = 1
-    model.phi_d_degree = 1
-    model.q_disc = "DG"
-    model.h_disc = "DG"
-    model.phi_disc = "DG"
-    model.phi_d_disc = "DG"
-    model.disc = [model.q_disc, model.h_disc, model.phi_disc, model.phi_d_disc]
-
     w_ic_e = [
         '(2./3.)*K*pow(t,-1./3.)*x[0]*(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
         '(4./9.)*pow(K,2.0)*pow(t,-2./3.)*(1./pow(Fr,2.0) - (1./4.) + (1./4.)*pow(x[0],2.0))',
@@ -251,10 +235,10 @@ def similarity_test(plot, show, save):
         ]
 
     def getError(model):
-        Fq = FunctionSpace(model.mesh, model.q_disc, model.q_degree + 2)
-        Fh = FunctionSpace(model.mesh, model.h_disc, model.h_degree + 2)
-        Fphi = FunctionSpace(model.mesh, model.phi_disc, model.phi_degree + 2)
-        Fphi_d = FunctionSpace(model.mesh, model.phi_d_disc, model.phi_d_degree + 2)
+        Fq = FunctionSpace(model.mesh, model.disc, model.degree + 2)
+        Fh = FunctionSpace(model.mesh, model.disc, model.degree + 2)
+        Fphi = FunctionSpace(model.mesh, model.disc, model.degree + 2)
+        Fphi_d = FunctionSpace(model.mesh, model.disc, model.degree + 2)
 
         K = ((27.0*model.Fr_**2.0)/(12.0 - 2.0*model.Fr_**2.0))**(1./3.)
         
@@ -267,22 +251,20 @@ def similarity_test(plot, show, save):
         E_h = errornorm(h, S_h, norm_type="L2", degree_rise=2)
         E_phi = errornorm(phi, S_phi, norm_type="L2", degree_rise=2)
 
-        E_x_N = abs(x_N - K*model.t**(2./3.))
-        E_u_N = abs(u_N - (2./3.)*K*model.t**(-1./3.))
+        E_x_N = abs(x_N(0) - K*model.t**(2./3.))
+        E_u_N = abs(u_N(0) - (2./3.)*K*model.t**(-1./3.))
 
         return E_q, E_h, E_phi, 0.0, E_x_N, E_u_N
     
     # long test
-    T = 1.5
-    dt = [1e-1, 1e-1/2, 1e-1/4, 1e-1/8, 1e-1/16, 1e-1/32, 1e-1/64, 1e-1/128, 1e-1/256, 1e-1/512]
-    dX = [1.0/4, 1.0/8, 1.0/16, 1.0/32, 1.0/64]
-    dt = [1e-1/32]
-    dX = [1.0/16, 1.0/32, 1.0/64]
-
-    # quick settings
     T = 0.52
-    dt = [1e-1/512]
-    dX = [1.0/4, 1.0/8, 1.0/16]
+    dt = [1e-1/16, 1e-1/32, 1e-1/64, 1e-1/128, 1e-1/256, 1e-1/512]
+    dX = [1.0/4, 1.0/8, 1.0/16, 1.0/32, 1.0/64]
+
+    # # quick settings
+    # T = 0.52
+    # dt = [1e-1/512]
+    # dX = [1.0/4, 1.0/8, 1.0/16]
 
     E = []
     for dt_ in dt:
@@ -293,8 +275,8 @@ def similarity_test(plot, show, save):
 
             model.dX_ = dX_
             model.timestep = dt_
-
             model.t = 0.5
+
             model.initialise_function_spaces()
 
             w_ic_E = Expression(
@@ -314,6 +296,7 @@ def similarity_test(plot, show, save):
 
             w_ic = project(w_ic_E, model.W)
             model.setup(w_ic = w_ic, similarity = True)
+            model.t = 0.5
             model.error_callback = getError
             E[-1].append(model.solve(T))
 
@@ -358,25 +341,14 @@ def dam_break_test(plot, show, save):
     model.phi_b = Constant(0.0)
     model.phi_d_b = Constant(0.0)
 
-    # discretisation
-    model.q_degree = 1
-    model.h_degree = 1
-    model.phi_degree = 1
-    model.phi_d_degree = 1
-    model.q_disc = "DG"
-    model.h_disc = "DG"
-    model.phi_disc = "DG"
-    model.phi_d_disc = "DG"
-    model.disc = [model.q_disc, model.h_disc, model.phi_disc, model.phi_d_disc]
-
     def getError(model):
 
         q, h, phi, phi_d, x_N_model, u_N_model = model.w[0].split()
 
-        Fq = FunctionSpace(model.mesh, model.q_disc, model.q_degree + 2)
-        Fh = FunctionSpace(model.mesh, model.h_disc, model.h_degree + 2)
-        Fphi = FunctionSpace(model.mesh, model.phi_disc, model.phi_degree + 2)
-        Fphi_d = FunctionSpace(model.mesh, model.phi_d_disc, model.phi_d_degree + 2)
+        Fq = FunctionSpace(model.mesh, model.disc, model.degree + 2)
+        Fh = FunctionSpace(model.mesh, model.disc, model.degree + 2)
+        Fphi = FunctionSpace(model.mesh, model.disc, model.degree + 2)
+        Fphi_d = FunctionSpace(model.mesh, model.disc, model.degree + 2)
 
         u_N = model.Fr_/(1.0+model.Fr_/2.0)
         h_N = (1.0/(1.0+model.Fr_/2.0))**2.0
@@ -385,19 +357,19 @@ def dam_break_test(plot, show, save):
         x_M = (2.0 - 3.0*h_N**0.5)*model.t
         x_L = -model.t
 
-        class u_expression(Expression):
+        class q_expression(Expression):
             def eval(self, value, x):
-                x_gate = x[0]*x_N_model - 1.0
+                x_gate = (x[0]*x_N_model(0) - 1.0)
                 if x_gate <= x_L:
                     value[0] = 0.0
                 elif x_gate <= x_M:
-                    value[0] = 2./3.*(1.+x_gate/model.t)
+                    value[0] = 2./3.*(1.+x_gate/model.t) * 1./9.*(2.0-x_gate/model.t)**2.0
                 else:
-                    value[0] = model.Fr_/(1.0+model.Fr_/2.0)
+                    value[0] = model.Fr_/(1.0+model.Fr_/2.0) * (1.0/(1.0+model.Fr_/2.0))**2.0
 
         class h_expression(Expression):
             def eval(self, value, x):
-                x_gate = x[0]*x_N_model - 1.0
+                x_gate = (x[0]*x_N_model(0) - 1.0)
                 if x_gate <= x_L:
                     value[0] = 1.0
                 elif x_gate <= x_M:
@@ -405,28 +377,26 @@ def dam_break_test(plot, show, save):
                 else:
                     value[0] = (1.0/(1.0+model.Fr_/2.0))**2.0
         
-        S_q = project(u_expression(), Fq)
+        S_q = project(q_expression(), Fq)
         S_h = project(h_expression(), Fh)
 
         E_q = errornorm(q, S_q, norm_type="L2", degree_rise=2)
         E_h = errornorm(h, S_h, norm_type="L2", degree_rise=2)
 
-        E_x_N = abs(x_N_model - x_N)
-        E_u_N = abs(u_N_model - u_N)
+        E_x_N = abs(x_N_model(0) - 1.0 - x_N)
+        E_u_N = abs(u_N_model(0) - u_N)
 
         return E_q, E_h, E_x_N, E_u_N
     
     # long test
     T = 0.5
-    dt = [1e-1, 1e-1/2, 1e-1/4, 1e-1/8, 1e-1/16, 1e-1/32, 1e-1/64, 1e-1/128, 1e-1/256, 1e-1/512]
+    dt = [1e-1/8, 1e-1/16, 1e-1/32, 1e-1/64, 1e-1/128, 1e-1/256, 1e-1/512]
     dX = [1.0/4, 1.0/8, 1.0/16, 1.0/32, 1.0/64]
-    dt = [1e-1/32]
-    dX = [1.0/16, 1.0/32, 1.0/64]
 
-    # quick settings
-    dt = [1e-1/64]
-    dX = [1.0/16, 1.0/32, 1.0/64]
-    dX = [1.0/64]
+    # # quick settings
+    # dt = [1e-1/64]
+    # dX = [1.0/16, 1.0/32, 1.0/64]
+    # dX = [1.0/64]
 
     E = []
     for dt_ in dt:
@@ -437,7 +407,6 @@ def dam_break_test(plot, show, save):
 
             model.dX_ = dX_
             model.timestep = dt_
-
             model.t = 0.0
             model.initialise_function_spaces()
 
@@ -448,14 +417,14 @@ def dam_break_test(plot, show, save):
     sw_io.write_array_to_file('dam_break.json', E, 'w')
 
     E = E[0]
-    print ( "R = 0.00  0.00  0.00  0.00  0.00 E = %.2e %.2e %.2e %.2e %.2e" 
+    print ( "R = 0.00  0.00  0.00  0.00  E = %.2e %.2e %.2e %.2e" 
             % (E[0][0], E[0][1], E[0][2], E[0][3]) ) 
     for i in range(1, len(E)):
         rh = np.log(E[i][0]/E[i-1][0])/np.log(dX[i]/dX[i-1])
         rq = np.log(E[i][1]/E[i-1][1])/np.log(dX[i]/dX[i-1])
         rx = np.log(E[i][2]/E[i-1][2])/np.log(dX[i]/dX[i-1])
         ru = np.log(E[i][3]/E[i-1][3])/np.log(dX[i]/dX[i-1])
-        print ( "R = %-5.2f %-5.2f %-5.2f %-5.2f %-5.2f E = %.2e %.2e %.2e %.2e %.2e"
+        print ( "R = %-5.2f %-5.2f %-5.2f %-5.2f E = %.2e %.2e %.2e %.2e"
                 % (rh, rq, rx, ru, E[i][0], E[i][1], E[i][2], E[i][3]) )   
 
 if __name__ == '__main__':
